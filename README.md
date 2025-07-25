@@ -8,7 +8,7 @@ A modular poker AI training system with schema-aligned feature extraction and un
 # Train the GTO agent (Layer 1 - current primary training)
 python trainingL1/train_L1.py
 
-# Play against the AI (CURRENTLY PERFORMS RANDOM ACTIONS, NOT GTO)
+# Play against the AI
 python playgame.py
 ```
 
