@@ -6,10 +6,10 @@ Current aim is to provide the AI with thorough equity and implied odds calculati
 ## Quick Start
 
 ```bash
-# Train the GTO agent (Layer 1 - current primary training) [will not run as of now – currently debugging]
+# Train the GTO agent (Layer 1 - current primary training) [currently debugging]
 python trainingL1/train_L1.py
 
-# Play against an opponent [currently performs random actions – not GTO]
+# Play against an opponent [currently performs random actions, not GTO]
 python playgame.py
 ```
 
