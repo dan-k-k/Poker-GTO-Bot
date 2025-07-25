@@ -13,7 +13,7 @@ class GTOPokerNet(nn.Module):
     Standard GTO poker network architecture.
     Used by both training and inference.
     """
-    def __init__(self, input_size: int = 507):  # Updated: Full feature schema with delta features and equity vs range
+    def __init__(self, input_size: int = 611):  # Updated: Full feature schema with delta features and equity vs range
         super().__init__()
         
         # Shared layers

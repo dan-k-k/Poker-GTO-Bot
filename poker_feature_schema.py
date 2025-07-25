@@ -216,6 +216,12 @@ class CurrentStreetSequenceFeatures:
     is_facing_raise: float = 0.0                    # Seat id is currently facing a raise (2bet)
     is_facing_3bet: float = 0.0                     # Seat id is currently facing a 3bet
     is_facing_4betplus: float = 0.0                 # Seat id is currently facing a 4bet+ [all monotonic]
+    # Strategic features
+    did_check_raise: float = 0.0                    # Seat id check-raised on this street
+    did_donk_bet: float = 0.0                       # Seat id made donk bet (bet OOP, not prev street aggressor)
+    did_3bet: float = 0.0                           # Seat id made 3-bet this street
+    did_float_bet: float = 0.0                      # Seat id made float bet (called prev street IP, bet when checked to)
+    did_probe_bet: float = 0.0                      # Seat id made probe bet (bet OOP after PF aggressor checked back)
     
     def to_list(self) -> List[float]:
         return [getattr(self, f.name) for f in fields(self)]
@@ -302,6 +308,12 @@ class SequenceHistoryFeatures:
     preflop_largebet_count: float = 0.0              # Seat id largebet (>70% of pot raise/bet) x times
     preflop_was_first_bettor: float = 0.0            # Seat id was first raiser/bettor
     preflop_was_last_bettor: float = 0.0             # Seat id was last raiser/bettor
+    # Strategic features
+    preflop_did_check_raise: float = 0.0             # Seat id check-raised preflop
+    preflop_did_3bet: float = 0.0                    # Seat id made 3-bet preflop
+    preflop_did_donk_bet: float = 0.0                # Seat id made donk bet preflop
+    preflop_did_float_bet: float = 0.0               # Seat id made float bet preflop
+    preflop_did_probe_bet: float = 0.0               # Seat id made probe bet preflop
     
     # Flop features
     flop_checked_count: float = 0.0
@@ -311,6 +323,12 @@ class SequenceHistoryFeatures:
     flop_largebet_count: float = 0.0
     flop_was_first_bettor: float = 0.0
     flop_was_last_bettor: float = 0.0
+    # Strategic features
+    flop_did_check_raise: float = 0.0
+    flop_did_3bet: float = 0.0
+    flop_did_donk_bet: float = 0.0
+    flop_did_float_bet: float = 0.0
+    flop_did_probe_bet: float = 0.0
     
     # Turn features
     turn_checked_count: float = 0.0
@@ -320,6 +338,12 @@ class SequenceHistoryFeatures:
     turn_largebet_count: float = 0.0
     turn_was_first_bettor: float = 0.0
     turn_was_last_bettor: float = 0.0
+    # Strategic features
+    turn_did_check_raise: float = 0.0
+    turn_did_3bet: float = 0.0
+    turn_did_donk_bet: float = 0.0
+    turn_did_float_bet: float = 0.0
+    turn_did_probe_bet: float = 0.0
     
     # River features
     river_checked_count: float = 0.0
@@ -329,6 +353,12 @@ class SequenceHistoryFeatures:
     river_largebet_count: float = 0.0
     river_was_first_bettor: float = 0.0
     river_was_last_bettor: float = 0.0
+    # Strategic features
+    river_did_check_raise: float = 0.0
+    river_did_3bet: float = 0.0
+    river_did_donk_bet: float = 0.0
+    river_did_float_bet: float = 0.0
+    river_did_probe_bet: float = 0.0
     
     def to_list(self) -> List[float]:
         return [getattr(self, f.name) for f in fields(self)]
@@ -410,6 +440,107 @@ class AdditionalHistoryFeatures:
         return [getattr(self, f.name) for f in fields(self)]
 
 # =============================================================================
+# OPPONENT MODEL FEATURES (Per-street strategic statistics)
+# =============================================================================
+
+@dataclass
+class OpponentModelFeatures:
+    """Opponent modeling features based on per-street strategic statistics [56 features]."""
+    # Meta statistics
+    total_hands: float = 0.0                           # Total hands observed
+    sample_size: float = 0.0                           # Recent sample size (sliding window)
+    
+    # Pre-flop core statistics
+    vpip: float = 0.0                                   # Voluntarily Put In Pot %
+    pfr: float = 0.0                                    # Pre-Flop Raise %
+    three_bet: float = 0.0                              # Overall 3-bet % (legacy)
+    fold_to_three_bet: float = 0.0                      # Fold to 3-bet %
+    limp: float = 0.0                                   # Limp %
+    preflop_fold_rate: float = 0.0                      # Preflop fold rate
+    
+    # Per-street strategic actions - 3-bet
+    three_bet_preflop: float = 0.0                      # 3-bet preflop %
+    three_bet_flop: float = 0.0                         # 3-bet flop % (much rarer)
+    three_bet_turn: float = 0.0                         # 3-bet turn % (very rare)
+    three_bet_river: float = 0.0                        # 3-bet river % (extremely rare)
+    
+    # Per-street strategic actions - Donk bet
+    donk_bet_flop: float = 0.0                          # Donk bet flop % (OOP, not prev aggressor)
+    donk_bet_turn: float = 0.0                          # Donk bet turn %
+    donk_bet_river: float = 0.0                         # Donk bet river %
+    
+    # Per-street strategic actions - Probe bet
+    probe_bet_turn: float = 0.0                         # Probe bet turn % (OOP after PF aggressor checked)
+    probe_bet_river: float = 0.0                        # Probe bet river %
+    
+    # Per-street strategic actions - Check-raise
+    checkraise_flop: float = 0.0                        # Check-raise flop %
+    checkraise_turn: float = 0.0                        # Check-raise turn %
+    checkraise_river: float = 0.0                       # Check-raise river %
+    
+    # Float bet (call flop IP, bet when checked to)
+    float_bet: float = 0.0                              # Float bet %
+    
+    # Post-flop aggression by street
+    cbet_flop: float = 0.0                              # Continuation bet flop %
+    cbet_turn: float = 0.0                              # Continuation bet turn %
+    cbet_river: float = 0.0                             # Continuation bet river %
+    aggression_frequency: float = 0.0                   # Overall post-flop aggression %
+    
+    # Post-flop defense by street
+    fold_to_cbet_flop: float = 0.0                      # Fold to c-bet flop %
+    fold_to_cbet_turn: float = 0.0                      # Fold to c-bet turn %
+    fold_to_cbet_river: float = 0.0                     # Fold to c-bet river %
+    
+    # Street-specific fold rates
+    flop_fold_rate: float = 0.0                         # Fold rate on flop
+    turn_fold_rate: float = 0.0                         # Fold rate on turn
+    river_fold_rate: float = 0.0                        # Fold rate on river
+    fold_frequency: float = 0.0                         # Overall fold frequency
+    
+    # Showdown tendencies
+    wtsd: float = 0.0                                   # Went To Showdown %
+    showdown_win_rate: float = 0.0                      # Won $ at Showdown %
+    
+    # Bet sizing and all-in tendencies
+    all_in_frequency: float = 0.0                       # All-in frequency %
+    avg_bet_size: float = 0.0                           # Average bet size (BB)
+    avg_pot_ratio: float = 0.0                          # Average bet-to-pot ratio
+    
+    # === ADVANCED BETTING PATTERNS ===
+    
+    # Multi-Street Aggression Patterns
+    double_barrel: float = 0.0                          # % bet turn after c-betting flop
+    triple_barrel: float = 0.0                          # % bet river after betting flop+turn
+    delayed_cbet: float = 0.0                           # % bet turn after checking flop (as PF aggressor)
+    
+    # Positional Betting Tendencies  
+    steal_attempt: float = 0.0                          # % raise from late position when folded to
+    fold_to_steal: float = 0.0                          # % fold in blinds vs late position raise
+    button_isolation: float = 0.0                       # % isolate limpers from button
+    
+    # Advanced Defensive and Deceptive Lines
+    fold_vs_flop_checkraise: float = 0.0                # % fold when c-bet gets check-raised
+    limp_reraise: float = 0.0                           # % 3-bet after limping (trapping)
+    slowplay_frequency: float = 0.0                     # % check strong hands for deception
+    
+    # Bet Sizing Tells (Layer 2 exploitative gold)
+    river_overbet_frequency: float = 0.0                # % overbet (>100% pot) on river
+    value_bet_sizing: float = 0.0                       # Avg bet size with value hands (% pot)
+    bluff_bet_sizing: float = 0.0                       # Avg bet size with bluff hands (% pot)
+    sizing_tell_strength: float = 0.0                   # |value_size - bluff_size| (exploitability)
+    
+    # Multi-Street Continuation Patterns
+    turn_probe_after_check: float = 0.0                 # % bet turn after checking flop OOP
+    river_probe_after_check: float = 0.0                # % bet river after checking turn OOP
+    barrel_give_up_turn: float = 0.0                    # % give up (check) turn after c-betting flop
+    barrel_give_up_river: float = 0.0                   # % give up river after betting flop+turn
+    
+    def to_list(self) -> List[float]:
+        return [getattr(self, f.name) for f in fields(self)]
+
+
+# =============================================================================
 # MASTER SCHEMA
 # =============================================================================
 
@@ -423,7 +554,8 @@ class PokerFeatureSchema:
     Core Features: 188 + 120 = 308 features (MyHandFeatures with full texture analysis)
     Current Street (Hero + Opponent): (11 + 11 + 4) * 2 + 4 + 7 = 63 features (added hand_strength, equity_vs_range, 3 deltas)
     History (Hero + Opponent): (28 + 32) * 2 + 16 = 136 features (added 8 hand strength/equity history features)
-    Total: 308 + 63 + 136 = 507 features
+    Opponent Model: 56 features (per-street strategic statistics + advanced patterns)
+    Total: 308 + 63 + 136 + 56 = 563 features
     """
     # === CORE POKER CONCEPTS ===
     my_hand: MyHandFeatures = field(default_factory=MyHandFeatures)                    # 188 features
@@ -456,6 +588,10 @@ class PokerFeatureSchema:
     # Non-seat-specific history
     additional_history: AdditionalHistoryFeatures = field(default_factory=AdditionalHistoryFeatures)       # 16 features (hero only)
     
+    # === OPPONENT MODEL FEATURES ===
+    # Opponent statistical profile based on observed behavior
+    opponent_model: OpponentModelFeatures = field(default_factory=OpponentModelFeatures)                   # 56 features
+    
     def to_vector(self) -> List[float]:
         """Flatten the entire nested structure into a single feature vector for ML model."""
         vector = []
@@ -480,6 +616,7 @@ class PokerFeatureSchema:
         vector.extend(self.opponent_sequence_history.to_list())   # 28 features
         vector.extend(self.opponent_stack_history.to_list())      # 32 features
         vector.extend(self.additional_history.to_list())          # 8 features
+        vector.extend(self.opponent_model.to_list())              # 56 features
         
         return vector
     
@@ -522,7 +659,7 @@ class PokerFeatureSchema:
         summary += f"  {'TOTAL':25} {total_features:3d} features\n"
         return summary
     
-    def validate_feature_count(self, expected: int = 507) -> bool:
+    def validate_feature_count(self, expected: int = 563) -> bool:
         """Validate that we have the expected number of features."""
         actual = len(self.to_vector())
         if actual != expected:

@@ -3,15 +3,23 @@
 
 import numpy as np
 import random
+import json
 from typing import Dict, List, Tuple, Optional
 from collections import deque
 
 try:
     from .equity_calculator import EquityCalculator, RangeConstructor
     from .live_debugger import LiveFeatureDebugger, format_features_for_hand_log
+    from ..range_predictor.range_dataset import classify_hand_properties
+    from ..analyzers.event_identifier import HandEventIdentifier, HandHistory, RawAction, ActionType, Street
 except ImportError:
     from equity_calculator import EquityCalculator, RangeConstructor
     from live_debugger import LiveFeatureDebugger, format_features_for_hand_log
+    import sys
+    import os
+    sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+    from range_predictor.range_dataset import classify_hand_properties
+    from analyzers.event_identifier import HandEventIdentifier, HandHistory, RawAction, ActionType, Street
 
 
 class DataCollector:
@@ -40,11 +48,284 @@ class DataCollector:
         
         # Live feature debugger for hand history logging
         self.live_debugger = LiveFeatureDebugger()
+        
+        # Range training data collection
+        self.range_data_file = 'trainingL1/range_training_data.jsonl'
+        self.range_data_buffer = []
+        self.range_data_batch_size = 100  # Write in batches for efficiency
+        
+        # HandEventIdentifier for clean statistical event detection
+        self.event_identifier = HandEventIdentifier()
+        
+        # Current hand tracking for HandHistory creation
+        self.current_hand_actions = []
+        self.current_hand_id = ""
+        self.current_starting_stacks = {}
+        self.current_dealer_position = 0
+        self.current_community_cards = {}
     
     def _initialize_range_constructor(self, action_selector):
         """Initialize range constructor with action selector."""
         if self.range_constructor is None:
             self.range_constructor = RangeConstructor(action_selector, self.feature_extractor)
+    
+    def _collect_range_training_data(self, features: List[float], hole_cards: List[str]):
+        """
+        Collect training data for range prediction network.
+        
+        Args:
+            features: Complete feature vector for the opponent 
+            hole_cards: Opponent's actual hole cards
+        """
+        try:
+            if len(hole_cards) != 2 or '??' in hole_cards:
+                return  # Skip if we don't have valid hole cards
+            
+            # Convert card strings to ranks and determine if suited
+            card1_rank = self._card_string_to_rank(hole_cards[0])
+            card2_rank = self._card_string_to_rank(hole_cards[1])
+            suited = hole_cards[0][1] == hole_cards[1][1]  # Same suit
+            
+            if card1_rank == -1 or card2_rank == -1:
+                return  # Skip invalid cards
+            
+            # Get hand properties using the classification function
+            hand_properties = classify_hand_properties(card1_rank, card2_rank, suited)
+            
+            # CRITICAL FIX: Sanitize features to avoid equity paradox
+            # Remove features that depend on range predictions to prevent circular learning
+            sanitized_features = self._sanitize_features_for_range_training(features)
+            
+            # Create training sample
+            training_sample = {
+                'features': sanitized_features,
+                'hand_properties': hand_properties
+            }
+            
+            # Add to buffer
+            self.range_data_buffer.append(training_sample)
+            
+            # Write batch if buffer is full
+            if len(self.range_data_buffer) >= self.range_data_batch_size:
+                self._write_range_data_batch()
+                
+        except Exception as e:
+            # Silently skip on error to avoid disrupting training
+            pass
+    
+    def _card_string_to_rank(self, card_str: str) -> int:
+        """Convert card string like '2s' to rank (0-12)."""
+        if len(card_str) < 1:
+            return -1
+        rank_char = card_str[0]
+        rank_map = {'2': 0, '3': 1, '4': 2, '5': 3, '6': 4, '7': 5, '8': 6, 
+                   '9': 7, 'T': 8, 'J': 9, 'Q': 10, 'K': 11, 'A': 12}
+        return rank_map.get(rank_char, -1)
+    
+    def _write_range_data_batch(self):
+        """Write accumulated range training data to file."""
+        try:
+            with open(self.range_data_file, 'a') as f:
+                for sample in self.range_data_buffer:
+                    f.write(json.dumps(sample) + '\n')
+            self.range_data_buffer.clear()
+        except Exception as e:
+            # Silently skip on error to avoid disrupting training
+            pass
+    
+    def flush_range_data(self):
+        """Flush any remaining range training data to file."""
+        if self.range_data_buffer:
+            self._write_range_data_batch()
+    
+    def _start_new_hand(self, hand_num: int, current_episode: int):
+        """Initialize tracking for a new hand using HandEventIdentifier architecture."""
+        self.current_hand_id = f"ep{current_episode}_h{hand_num}"
+        self.current_hand_actions = []
+        self.current_starting_stacks = dict(enumerate(self.env.state.stacks.copy()))
+        self.current_dealer_position = getattr(self.env.state, 'dealer', 0)
+        self.current_community_cards = {street: [] for street in Street}
+    
+    def _record_raw_action(self, player_id: int, action: int, amount: int, state: Dict):
+        """Record a raw action for later analysis by HandEventIdentifier."""
+        # Convert numeric action to ActionType
+        action_type_map = {0: ActionType.FOLD, 1: ActionType.CALL, 2: ActionType.RAISE}
+        if action == 1 and amount == 0:
+            action_type = ActionType.CHECK
+        elif action == 2 and max(state.get('current_bets', [0])) == 0:
+            action_type = ActionType.BET
+        else:
+            action_type = action_type_map.get(action, ActionType.FOLD)
+        
+        # Convert stage to Street enum
+        stage = state.get('stage', 0)
+        street = Street(min(stage, 3))  # Cap at river
+        
+        # Determine if player was facing a bet
+        current_bets = state.get('current_bets', [0, 0])
+        was_facing_bet = max(current_bets) > current_bets[player_id]
+        
+        # Create RawAction object
+        raw_action = RawAction(
+            player_id=player_id,
+            street=street,
+            action_type=action_type,
+            amount=amount if amount else 0,
+            pot_size_before=state.get('pot', 0),
+            was_facing_bet=was_facing_bet,
+            stack_size=state.get('stacks', [0, 0])[player_id]
+        )
+        
+        self.current_hand_actions.append(raw_action)
+    
+    def _update_community_cards(self, state: Dict):
+        """Update community cards tracking based on current state."""
+        board = self._get_board_cards()
+        if len(board) == 0:
+            return  # Preflop
+        elif len(board) == 3:
+            self.current_community_cards[Street.FLOP] = [self._card_string_to_id(card) for card in board]
+        elif len(board) == 4:
+            self.current_community_cards[Street.TURN] = [self._card_string_to_id(card) for card in board]
+        elif len(board) == 5:
+            self.current_community_cards[Street.RIVER] = [self._card_string_to_id(card) for card in board]
+    
+    def _card_string_to_id(self, card_str: str) -> int:
+        """Convert card string like '2s' to card ID (0-51)."""
+        if len(card_str) < 2:
+            return 0
+        rank_char = card_str[0]
+        suit_char = card_str[1]
+        
+        rank_map = {'2': 0, '3': 1, '4': 2, '5': 3, '6': 4, '7': 5, '8': 6, 
+                   '9': 7, 'T': 8, 'J': 9, 'Q': 10, 'K': 11, 'A': 12}
+        suit_map = {'c': 0, 'd': 1, 'h': 2, 's': 3}
+        
+        rank = rank_map.get(rank_char, 0)
+        suit = suit_map.get(suit_char, 0)
+        
+        return rank * 4 + suit
+    
+    def _finish_hand_with_event_identifier(self, final_state: Dict, player_map: Dict = None):
+        """Complete hand analysis using HandEventIdentifier and update StatsTracker.""" 
+        if not self.stats_tracker:
+            return
+        
+        # Get hole cards for players
+        hole_cards = {}
+        for player_id in [0, 1]:
+            cards = self._get_hand_cards(player_id)
+            if cards and len(cards) >= 2:
+                hole_cards[player_id] = [self._card_string_to_id(card) for card in cards[:2]]
+        
+        # Get showdown information
+        showdown_hands = {}
+        winners = final_state.get('winners', [])
+        if final_state.get('stage', 0) >= 3:  # Reached showdown
+            for player_id in [0, 1]:
+                if player_id in hole_cards:
+                    showdown_hands[player_id] = hole_cards[player_id]
+        
+        # Create HandHistory object
+        hand_history = HandHistory(
+            hand_id=self.current_hand_id,
+            players=[0, 1],
+            starting_stacks=self.current_starting_stacks,
+            blinds=(50, 100),  # Default blinds - could be extracted from env
+            dealer_position=self.current_dealer_position,
+            hole_cards=hole_cards,
+            community_cards=self.current_community_cards,
+            raw_actions=self.current_hand_actions,
+            final_pot=final_state.get('pot', 0),
+            winners=winners,
+            showdown_hands=showdown_hands
+        )
+        
+        # Use HandEventIdentifier to analyze the complete hand
+        try:
+            player_events = self.event_identifier.identify_events(hand_history)
+            
+            # Update StatsTracker with clean events for each player
+            for player_id, events in player_events.items():
+                # Use player_map to get persistent model ID, fallback to seat ID
+                if player_map and player_id in player_map:
+                    persistent_id = player_map[player_id]
+                else:
+                    persistent_id = str(player_id)  # Fallback for backwards compatibility
+                
+                self.stats_tracker.update_from_events(persistent_id, events)
+                
+        except Exception as e:
+            # Don't crash training if event identification fails
+            print(f"Warning: HandEventIdentifier failed: {e}")
+            # Fallback to empty events to maintain training stability
+            for player_id in [0, 1]:
+                persistent_id = player_map.get(player_id, str(player_id)) if player_map else str(player_id)
+                self.stats_tracker.update_from_events(persistent_id, {})
+    
+    def _sanitize_features_for_range_training(self, features: List[float]) -> List[float]:
+        """
+        Programmatically remove features that depend on range predictions to avoid circular learning.
+        
+        The Range Predictor Network must not see features calculated using range predictions.
+        This method uses the schema to find exact feature positions - no hard-coded indices.
+        
+        Args:
+            features: Complete ~500-dimensional feature vector
+            
+        Returns:
+            Sanitized feature vector with equity-dependent features zeroed out
+        """
+        from poker_feature_schema import PokerFeatureSchema
+        from dataclasses import fields
+        
+        # Make a copy to avoid modifying the original
+        sanitized = list(features)
+        
+        # Define features that must be removed (depend on opponent range)
+        # Use root names to catch both current AND historical variants
+        leaky_feature_roots = {
+            'equity_vs_range',      # Catches: equity_vs_range, preflop_equity_vs_range, etc.
+            'equity_delta',         # Catches: equity_delta, flop_equity_delta, etc.
+            'implied_odds'
+        }
+        
+        # Programmatically find and zero out leaky features
+        try:
+            schema = PokerFeatureSchema()
+            current_index = 0
+            
+            # Iterate through all feature groups in the schema
+            for group_field in fields(schema):
+                group_obj = getattr(schema, group_field.name)
+                
+                # Handle groups with to_list() method (complex feature groups)
+                if hasattr(group_obj, 'to_list'):
+                    for feature_field in fields(group_obj):
+                        if any(root in feature_field.name for root in leaky_feature_roots):
+                            if current_index < len(sanitized):
+                                sanitized[current_index] = 0.0
+                        current_index += 1
+                # Handle simple feature groups
+                else:
+                    # Check if this simple group contains leaky features
+                    if hasattr(group_obj, '__class__') and hasattr(group_obj.__class__, '__dataclass_fields__'):
+                        for feature_field in fields(group_obj):
+                            if any(root in feature_field.name for root in leaky_feature_roots):
+                                if current_index < len(sanitized):
+                                    sanitized[current_index] = 0.0
+                            current_index += 1
+                    else:
+                        # Skip non-dataclass groups
+                        current_index += 1
+                        
+        except Exception as e:
+            # Fallback: if schema parsing fails, don't crash training
+            # Just log the error and return original features
+            print(f"Warning: Feature sanitization failed: {e}")
+            return features
+        
+        return sanitized
     
     def _get_hand_cards(self, player_id: int) -> List[str]:
         """Extract hand cards for a player from environment state."""
@@ -220,6 +501,9 @@ class DataCollector:
             self._initialize_range_constructor(action_selector)
             self.opponent_action_history = []  # Reset for new hand
             
+            # Initialize new HandEventIdentifier architecture
+            self._start_new_hand(hand_num, current_episode)
+            
             hand_experiences = []
             initial_stack = self.env.state.stacks[0]
             
@@ -231,13 +515,6 @@ class DataCollector:
                 p0_hand = self._get_hand_cards(0)
                 p1_hand = self._get_hand_cards(1)
                 hand_log.append(f"[Ep {current_episode}, Hand {hand_num}] P0(AS) dealt {p0_hand}. P1(BR) dealt {p1_hand}.")
-            
-            # Initialize event tracking for new sliding window system
-            hand_events = {0: {}, 1: {}}  # Track events for each player
-            preflop_aggressor = None
-            flop_aggressor = None
-            turn_aggressor = None
-            stage = 0  # 0=preflop, 1=flop, 2=turn, 3=river
             
             done = False
             hand_action_count = 0
@@ -314,6 +591,10 @@ class DataCollector:
                     # CRITICAL FIX: Track opponent actions for equity calculation
                     action_data = {'action': action, 'amount': amount or 0}
                     self.opponent_action_history.append(action_data)
+                    
+                    # Collect range training data for opponent (Player 1)
+                    opponent_hole_cards = self._get_hand_cards(1)
+                    self._collect_range_training_data(features, opponent_hole_cards)
                 
                 # Track action statistics
                 if action == 0:  # Fold
@@ -323,77 +604,11 @@ class DataCollector:
                 elif amount is not None and amount == state['stacks'][current_player]:  # All-in
                     all_ins += 1
                 
-                # Smart event identification for new sliding window StatsTracker
+                # Record raw action for later analysis by HandEventIdentifier  
                 if self.stats_tracker:
-                    pot_size = state.get('pot', 0)
-                    stage = state.get('stage', 0)
-                    was_facing_bet = len(set(state.get('current_bets', []))) > 1
-                    
-                    # Track events for this player this hand
-                    if current_player not in hand_events:
-                        hand_events[current_player] = {}
-                    
-                    # Identify specific opportunities based on action and context
-                    if stage == 0:  # Pre-flop
-                        # VPIP opportunity: Any action that puts money in voluntarily
-                        if action in [1, 2] and amount and amount > 0:
-                            hand_events[current_player]['vpip_opportunity'] = True
-                            hand_events[current_player]['vpip_action'] = True
-                        elif action == 0:  # Folded when could have called/raised
-                            hand_events[current_player]['vpip_opportunity'] = True
-                            hand_events[current_player]['vpip_action'] = False
-                        
-                        # PFR opportunity: When player can raise
-                        if action == 2:  # Raised
-                            hand_events[current_player]['pfr_opportunity'] = True
-                            hand_events[current_player]['pfr_action'] = True
-                        elif action in [0, 1]:  # Could have raised but didn't
-                            hand_events[current_player]['pfr_opportunity'] = True
-                            hand_events[current_player]['pfr_action'] = False
-                    
-                    else:  # Post-flop (stage 1=flop, 2=turn, 3=river)
-                        # C-bet opportunity: Was aggressor on previous street
-                        if stage == 1 and preflop_aggressor == current_player:
-                            hand_events[current_player]['cbet_flop_opportunity'] = True
-                            hand_events[current_player]['cbet_flop_action'] = (action == 2)
-                        elif stage == 2 and flop_aggressor == current_player:
-                            hand_events[current_player]['cbet_turn_opportunity'] = True
-                            hand_events[current_player]['cbet_turn_action'] = (action == 2)
-                        elif stage == 3 and turn_aggressor == current_player:
-                            hand_events[current_player]['cbet_river_opportunity'] = True
-                            hand_events[current_player]['cbet_river_action'] = (action == 2)
-                        
-                        # Fold to C-bet opportunity: Facing a bet
-                        if was_facing_bet:
-                            if stage == 1:
-                                hand_events[current_player]['fold_to_cbet_flop_opportunity'] = True
-                                hand_events[current_player]['fold_to_cbet_flop_action'] = (action == 0)
-                            elif stage == 2:
-                                hand_events[current_player]['fold_to_cbet_turn_opportunity'] = True
-                                hand_events[current_player]['fold_to_cbet_turn_action'] = (action == 0)
-                            elif stage == 3:
-                                hand_events[current_player]['fold_to_cbet_river_opportunity'] = True
-                                hand_events[current_player]['fold_to_cbet_river_action'] = (action == 0)
-                    
-                    # Track aggressors for next street's C-bet opportunities
-                    if action == 2:  # Bet/raise
-                        if stage == 0:
-                            preflop_aggressor = current_player
-                        elif stage == 1:
-                            flop_aggressor = current_player
-                        elif stage == 2:
-                            turn_aggressor = current_player
-                    
-                    # Store bet sizes and pot ratios for this action
-                    if action == 2 and amount and amount > 0:
-                        if 'bet_sizes' not in hand_events[current_player]:
-                            hand_events[current_player]['bet_sizes'] = []
-                        hand_events[current_player]['bet_sizes'].append(amount)
-                        
-                        if pot_size > 0:
-                            if 'pot_ratios' not in hand_events[current_player]:
-                                hand_events[current_player]['pot_ratios'] = []
-                            hand_events[current_player]['pot_ratios'].append(amount / pot_size)
+                    self._record_raw_action(current_player, action, amount or 0, state)
+                    # Update community cards tracking
+                    self._update_community_cards(state)
                 
                 hand_action_count += 1
                 total_actions += 1
@@ -465,54 +680,8 @@ class DataCollector:
             final_stack = self.env.state.stacks[0]
             hand_profit = final_stack - initial_stack
             
-            # Complete hand tracking for new event-based StatsTracker
-            if self.stats_tracker:
-                final_stage = state.get('stage', 0)
-                winners = self.env.state.winners if hasattr(self.env.state, 'winners') else []
-                
-                # Add showdown and general hand events for all players
-                for player_id in [0, 1]:
-                    if player_id not in hand_events:
-                        hand_events[player_id] = {}
-                    
-                    # Showdown events
-                    if final_stage >= 3:  # Reached river or beyond
-                        hand_events[player_id]['showdown_opportunity'] = True
-                        hand_events[player_id]['went_to_showdown'] = True
-                        hand_events[player_id]['won_showdown'] = (player_id in winners)
-                    else:
-                        hand_events[player_id]['showdown_opportunity'] = False
-                    
-                    # All-in events (simplified detection)
-                    if 'bet_sizes' in hand_events[player_id]:
-                        max_bet = max(hand_events[player_id]['bet_sizes'])
-                        # Rough all-in detection: bet > 80% of pot
-                        went_all_in = any(bet > pot_size * 0.8 for bet in hand_events[player_id]['bet_sizes'])
-                        hand_events[player_id]['all_in_opportunity'] = True
-                        hand_events[player_id]['went_all_in'] = went_all_in
-                    
-                    # General post-flop action tracking
-                    had_postflop = any(stage > 0 for stage in [0, 1, 2, 3])  # Simplified
-                    if had_postflop:
-                        hand_events[player_id]['had_postflop_action'] = True
-                        # Track if player was aggressive or folded postflop
-                        hand_events[player_id]['was_aggressive_postflop'] = any(
-                            key.endswith('_action') and key.startswith('cbet_') and hand_events[player_id].get(key, False)
-                            for key in hand_events[player_id]
-                        )
-                        hand_events[player_id]['folded_postflop'] = any(
-                            key.endswith('_action') and key.startswith('fold_to_') and hand_events[player_id].get(key, False)
-                            for key in hand_events[player_id]
-                        )
-                
-                # Update stats using new event-based system with player mapping
-                for player_id, events in hand_events.items():
-                    # Use player_map to get persistent model ID, fallback to seat ID
-                    if player_map and player_id in player_map:
-                        persistent_id = player_map[player_id]
-                    else:
-                        persistent_id = str(player_id)  # Fallback for backwards compatibility
-                    self.stats_tracker.update_from_events(persistent_id, events)
+            # Complete hand analysis using HandEventIdentifier
+            self._finish_hand_with_event_identifier(state, player_map)
             
             # DEBUG: Log showdown and write hand history
             if should_log_hand:
@@ -578,6 +747,9 @@ class DataCollector:
             if hand_profit > 0:
                 wins += 1
         
+        # Flush any remaining range training data
+        self.flush_range_data()
+        
         return experiences, wins / num_hands
     
     def collect_best_response_data(self, num_hands: int, action_selector, current_episode: int, opponent_stats: Dict, player_map: Dict = None) -> Tuple[List[Dict], float]:
@@ -637,11 +809,8 @@ class DataCollector:
             hand_experiences = []
             initial_stack = self.env.state.stacks[0]
             
-            # Initialize event tracking for new sliding window system
-            hand_events = {0: {}, 1: {}}  # Track events for each player
-            preflop_aggressor = None
-            flop_aggressor = None
-            turn_aggressor = None
+            # Initialize new HandEventIdentifier architecture
+            self._start_new_hand(hand_num, current_episode)
             
             done = False
             while not done:
@@ -673,6 +842,10 @@ class DataCollector:
                     # CRITICAL FIX: Track opponent actions for equity calculation
                     action_data = {'action': action, 'amount': amount or 0}
                     self.opponent_action_history.append(action_data)
+                    
+                    # Collect range training data for opponent (Player 1)
+                    opponent_hole_cards = self._get_hand_cards(1)
+                    self._collect_range_training_data(features, opponent_hole_cards)
                 
                 # Track action statistics
                 if action == 0:  # Fold
@@ -682,7 +855,7 @@ class DataCollector:
                 elif amount is not None and amount == state['stacks'][current_player]:  # All-in
                     all_ins += 1
                 
-                # Smart event identification for new sliding window StatsTracker
+                # Record raw action for later analysis by HandEventIdentifier
                 if self.stats_tracker:
                     pot_size = state.get('pot', 0)
                     stage = state.get('stage', 0)
@@ -796,54 +969,8 @@ class DataCollector:
             final_stack = self.env.state.stacks[0]
             hand_profit = final_stack - initial_stack
             
-            # Complete hand tracking for new event-based StatsTracker
-            if self.stats_tracker:
-                final_stage = state.get('stage', 0)
-                winners = self.env.state.winners if hasattr(self.env.state, 'winners') else []
-                
-                # Add showdown and general hand events for all players
-                for player_id in [0, 1]:
-                    if player_id not in hand_events:
-                        hand_events[player_id] = {}
-                    
-                    # Showdown events
-                    if final_stage >= 3:  # Reached river or beyond
-                        hand_events[player_id]['showdown_opportunity'] = True
-                        hand_events[player_id]['went_to_showdown'] = True
-                        hand_events[player_id]['won_showdown'] = (player_id in winners)
-                    else:
-                        hand_events[player_id]['showdown_opportunity'] = False
-                    
-                    # All-in events (simplified detection)
-                    if 'bet_sizes' in hand_events[player_id]:
-                        max_bet = max(hand_events[player_id]['bet_sizes'])
-                        # Rough all-in detection: bet > 80% of pot
-                        went_all_in = any(bet > pot_size * 0.8 for bet in hand_events[player_id]['bet_sizes'])
-                        hand_events[player_id]['all_in_opportunity'] = True
-                        hand_events[player_id]['went_all_in'] = went_all_in
-                    
-                    # General post-flop action tracking
-                    had_postflop = any(stage > 0 for stage in [0, 1, 2, 3])  # Simplified
-                    if had_postflop:
-                        hand_events[player_id]['had_postflop_action'] = True
-                        # Track if player was aggressive or folded postflop
-                        hand_events[player_id]['was_aggressive_postflop'] = any(
-                            key.endswith('_action') and key.startswith('cbet_') and hand_events[player_id].get(key, False)
-                            for key in hand_events[player_id]
-                        )
-                        hand_events[player_id]['folded_postflop'] = any(
-                            key.endswith('_action') and key.startswith('fold_to_') and hand_events[player_id].get(key, False)
-                            for key in hand_events[player_id]
-                        )
-                
-                # Update stats using new event-based system with player mapping
-                for player_id, events in hand_events.items():
-                    # Use player_map to get persistent model ID, fallback to seat ID
-                    if player_map and player_id in player_map:
-                        persistent_id = player_map[player_id]
-                    else:
-                        persistent_id = str(player_id)  # Fallback for backwards compatibility
-                    self.stats_tracker.update_from_events(persistent_id, events)
+            # Complete hand analysis using HandEventIdentifier
+            self._finish_hand_with_event_identifier(state, player_map)
             
             # Track session wins
             self.session_hands += 1
@@ -892,6 +1019,9 @@ class DataCollector:
             if hand_profit > 0:
                 wins += 1
         
+        # Flush any remaining range training data
+        self.flush_range_data()
+        
         return experiences, wins / num_hands
     
     def _count_session_winner(self):
@@ -924,4 +1054,3 @@ class DataCollector:
         else:
             print("🏆 Episode Sessions Won: No completed sessions")
     
-

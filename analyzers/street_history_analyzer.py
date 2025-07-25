@@ -200,6 +200,13 @@ class HistoryAnalyzer:
             is_first_bettor = 1.0 if aggressors and aggressors[0] == seat_id else 0.0
             is_last_bettor = 1.0 if aggressors and aggressors[-1] == seat_id else 0.0
             
+            # Strategic features
+            did_check_raise = self._detect_check_raise_history(seat_actions)
+            did_3bet = self._detect_3bet_history(seat_id, action_log)
+            did_donk_bet = self._detect_donk_bet_history(seat_id, action_log, static_ctx)
+            did_float_bet = self._detect_float_bet_history(seat_id, static_ctx)
+            did_probe_bet = self._detect_probe_bet_history(seat_id, action_log, static_ctx)
+            
             # Save to summary
             summary[f"{prefix}checked_count"] = checked_count
             summary[f"{prefix}raised_count"] = raised_count
@@ -208,6 +215,12 @@ class HistoryAnalyzer:
             summary[f"{prefix}largebet_count"] = largebet_count
             summary[f"{prefix}is_first_bettor"] = is_first_bettor
             summary[f"{prefix}is_last_bettor"] = is_last_bettor
+            # Strategic features
+            summary[f"{prefix}did_check_raise"] = did_check_raise
+            summary[f"{prefix}did_3bet"] = did_3bet
+            summary[f"{prefix}did_donk_bet"] = did_donk_bet
+            summary[f"{prefix}did_float_bet"] = did_float_bet
+            summary[f"{prefix}did_probe_bet"] = did_probe_bet
         
         return summary
     
@@ -287,4 +300,106 @@ class HistoryAnalyzer:
         """Convert stage number to street name."""
         stage_map = {0: 'preflop', 1: 'flop', 2: 'turn', 3: 'river'}
         return stage_map.get(stage, 'preflop')
+    
+    def _detect_check_raise_history(self, seat_actions: list) -> float:
+        """
+        Detect if player check-raised during this street (for history).
+        
+        Args:
+            seat_actions: List of (seat_id, action_type, amount) for this player
+        """
+        if len(seat_actions) < 2:
+            return 0.0
+        
+        # Look for check followed by raise pattern
+        for i in range(len(seat_actions) - 1):
+            if (seat_actions[i][1] == "check" and 
+                seat_actions[i + 1][1] in ["bet", "raise"]):
+                return 1.0
+        
+        return 0.0
+    
+    def _detect_3bet_history(self, seat_id: int, action_log: list) -> float:
+        """
+        Detect if player made a 3-bet during this street (for history).
+        """
+        aggressive_actions = []
+        for action_seat_id, action_type, amount in action_log:
+            if action_type in ["bet", "raise"]:
+                aggressive_actions.append(action_seat_id)
+        
+        # Player made the 3-bet if they made the 3rd aggressive action
+        if len(aggressive_actions) >= 3 and aggressive_actions[2] == seat_id:
+            return 1.0
+        
+        return 0.0
+    
+    def _detect_donk_bet_history(self, seat_id: int, action_log: list, static_ctx: StaticContext) -> float:
+        """
+        Detect if player made a donk bet during this street (for history).
+        """
+        if static_ctx.stage == 0:  # Can't donk bet preflop
+            return 0.0
+        
+        # Check if this player made the first bet this street
+        first_aggressive_action_seat = None
+        for action_seat_id, action_type, amount in action_log:
+            if action_type in ["bet", "raise"]:
+                first_aggressive_action_seat = action_seat_id
+                break
+        
+        if first_aggressive_action_seat != seat_id:
+            return 0.0
+        
+        # Check if player is out of position (dealer in heads-up)
+        dealer_seat = static_ctx.game_state.dealer_seat
+        is_out_of_position = (seat_id == dealer_seat)
+        
+        if is_out_of_position:
+            return 1.0
+        
+        return 0.0
+    
+    def _detect_float_bet_history(self, seat_id: int, static_ctx: StaticContext) -> float:
+        """
+        Detect if player made a float bet during this street (for history).
+        
+        Note: This is simplified for history - full detection would require 
+        cross-street analysis which is complex for historical data.
+        """
+        # Simplified: just check if player is in position and made first bet
+        # (More sophisticated detection would require previous street analysis)
+        dealer_seat = static_ctx.game_state.dealer_seat
+        is_in_position = (seat_id == dealer_seat)
+        
+        if is_in_position and static_ctx.stage >= 2:  # Turn or river
+            return 0.5  # Partial credit - can't fully verify without cross-street data
+        
+        return 0.0
+    
+    def _detect_probe_bet_history(self, seat_id: int, action_log: list, static_ctx: StaticContext) -> float:
+        """
+        Detect if player made a probe bet during this street (for history).
+        """
+        if static_ctx.stage < 2:  # Need at least turn
+            return 0.0
+        
+        # Check if player is out of position and made first bet
+        dealer_seat = static_ctx.game_state.dealer_seat
+        is_out_of_position = (seat_id == dealer_seat)
+        
+        if not is_out_of_position:
+            return 0.0
+        
+        # Check if player made first bet this street
+        first_bet_this_street = None
+        for action_seat_id, action_type, amount in action_log:
+            if action_type in ["bet", "raise"]:
+                first_bet_this_street = action_seat_id
+                break
+        
+        if first_bet_this_street == seat_id:
+            return 0.5  # Partial credit - can't fully verify PF aggressor checking back
+        
+        return 0.0
     

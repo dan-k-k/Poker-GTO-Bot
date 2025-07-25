@@ -77,6 +77,16 @@ class CurrentStreetAnalyzer:
         total_raise_pct_of_pot = 0.0  # Sum of (raise_amount / pot_before_raise)
         total_bet_to_starting_pot = 0.0  # Sum of (total_bet / starting_pot_this_street)
         
+        # NEW: Advanced strategic features
+        did_check_raise = 0.0  # Player checked then raised on same street
+        did_donk_bet = 0.0     # Player bet out of position when not aggressor
+        did_3bet = 0.0         # Player made the 3rd bet in sequence
+        did_float_bet = 0.0    # Called previous street, bet when checked to
+        did_probe_bet = 0.0    # Bet OOP after PF aggressor checked back
+        
+        # Track player's action pattern for strategic detection
+        player_actions_this_street = []
+        
         # Track pot size as we iterate through actions
         starting_pot_this_street = static_ctx.game_state.starting_pot_this_round
         pot_at_action = float(starting_pot_this_street)
@@ -88,6 +98,9 @@ class CurrentStreetAnalyzer:
             
             # Track this player's specific actions
             if action_seat_id == seat_id:
+                # Record action for strategic pattern detection
+                player_actions_this_street.append((action_type, amount))
+                
                 if action_type == "check":
                     checked_count += 1.0
                 elif action_type in ["bet", "raise"]:
@@ -122,6 +135,13 @@ class CurrentStreetAnalyzer:
             avg_raise_pct_of_pot = 0.0
             avg_bet_to_starting_pot = 0.0
         
+        # Detect strategic patterns
+        did_check_raise = self._detect_check_raise(player_actions_this_street)
+        did_donk_bet = self._detect_donk_bet(seat_id, action_sequence, static_ctx, dynamic_ctx)
+        did_3bet = self._detect_3bet(seat_id, action_sequence)
+        did_float_bet = self._detect_float_bet(seat_id, static_ctx, dynamic_ctx)
+        did_probe_bet = self._detect_probe_bet(seat_id, action_sequence, static_ctx, dynamic_ctx)
+        
         # What this seat is currently facing (monotonic)
         is_facing_check = 1.0 if max_bet == 0 else 0.0
         is_facing_bet = 1.0 if max_bet > 0 and to_call > 0 else 0.0
@@ -144,7 +164,13 @@ class CurrentStreetAnalyzer:
             "is_facing_bet": is_facing_bet,
             "is_facing_raise": is_facing_raise,
             "is_facing_3bet": is_facing_3bet,
-            "is_facing_4betplus": is_facing_4betplus
+            "is_facing_4betplus": is_facing_4betplus,
+            # Strategic features
+            "did_check_raise": did_check_raise,
+            "did_donk_bet": did_donk_bet,
+            "did_3bet": did_3bet,
+            "did_float_bet": did_float_bet,
+            "did_probe_bet": did_probe_bet
         }
     
     def calculate_current_street_stack(self, seat_id: int, static_ctx: StaticContext, dynamic_ctx: DynamicContext) -> dict:
@@ -714,4 +740,187 @@ class CurrentStreetAnalyzer:
         big_blind = dynamic_ctx.history_tracker.get_big_blind()
         delta_chips = current_pot - previous_pot
         return delta_chips / max(big_blind, 1)
+    
+    def _detect_check_raise(self, player_actions: list) -> float:
+        """
+        Detect if player check-raised (checked then raised on same street).
+        
+        Args:
+            player_actions: List of (action_type, amount) tuples for this player
+            
+        Returns:
+            1.0 if check-raise detected, 0.0 otherwise
+        """
+        if len(player_actions) < 2:
+            return 0.0
+        
+        # Look for check followed by raise pattern
+        for i in range(len(player_actions) - 1):
+            if (player_actions[i][0] == "check" and 
+                player_actions[i + 1][0] in ["bet", "raise"]):
+                return 1.0
+        
+        return 0.0
+    
+    def _detect_donk_bet(self, seat_id: int, action_sequence: list, 
+                        static_ctx: StaticContext, dynamic_ctx: DynamicContext) -> float:
+        """
+        Detect if player made a donk bet (bet out of position when not the previous street aggressor).
+        
+        A donk bet is when:
+        1. Player bets first on a street (not preflop)
+        2. Player is out of position 
+        3. Player was not the aggressor on the previous street
+        """
+        if static_ctx.game_state.stage == 0:  # Can't donk bet preflop
+            return 0.0
+        
+        # Check if this player made the first bet this street
+        first_aggressive_action_seat = None
+        for action_seat_id, action_type, amount in action_sequence:
+            if action_type in ["bet", "raise"]:
+                first_aggressive_action_seat = action_seat_id
+                break
+        
+        if first_aggressive_action_seat != seat_id:
+            return 0.0
+        
+        # Check if player is out of position (not dealer in heads-up)
+        # In heads-up: dealer is SB and acts first postflop (out of position)
+        dealer_seat = static_ctx.game_state.dealer_seat
+        is_out_of_position = (seat_id == dealer_seat)
+        
+        if not is_out_of_position:
+            return 0.0
+        
+        # Check if player was NOT the aggressor on previous street
+        previous_street_aggressor = dynamic_ctx.history_tracker.get_last_aggressor()
+        if previous_street_aggressor == seat_id:
+            return 0.0
+        
+        return 1.0
+    
+    def _detect_3bet(self, seat_id: int, action_sequence: list) -> float:
+        """
+        Detect if player made a 3-bet (third bet in the sequence).
+        
+        3-bet is the third aggressive action in a betting sequence.
+        """
+        aggressive_actions = []
+        for action_seat_id, action_type, amount in action_sequence:
+            if action_type in ["bet", "raise"]:
+                aggressive_actions.append(action_seat_id)
+        
+        # Player made the 3-bet if they made the 3rd aggressive action
+        if len(aggressive_actions) >= 3 and aggressive_actions[2] == seat_id:
+            return 1.0
+        
+        return 0.0
+    
+    def _detect_float_bet(self, seat_id: int, static_ctx: StaticContext, 
+                         dynamic_ctx: DynamicContext) -> float:
+        """
+        Detect if player made a float bet.
+        
+        Float bet: Called a bet on previous street in position, then bet when checked to.
+        This requires checking history across streets.
+        """
+        current_stage = static_ctx.game_state.stage
+        
+        # Need at least flop to have a float bet
+        if current_stage < 2:  # Need turn or river
+            return 0.0
+        
+        # Check if player is in position (dealer in heads-up)
+        dealer_seat = static_ctx.game_state.dealer_seat
+        is_in_position = (seat_id == dealer_seat)
+        
+        if not is_in_position:
+            return 0.0
+        
+        # Get previous street history
+        previous_street_history = dynamic_ctx.history_tracker.get_street_history(current_stage - 1)
+        if not previous_street_history:
+            return 0.0
+        
+        # Check if player called on previous street
+        player_called_previous = False
+        opponent_bet_previous = False
+        
+        for action in previous_street_history:
+            if action.get('seat_id') == seat_id and action.get('action') == 'call':
+                player_called_previous = True
+            elif action.get('seat_id') != seat_id and action.get('action') in ['bet', 'raise']:
+                opponent_bet_previous = True
+        
+        if not (player_called_previous and opponent_bet_previous):
+            return 0.0
+        
+        # Check if opponent checked this street and player bet
+        current_street_actions = dynamic_ctx.history_tracker.get_current_street_actions()
+        opponent_checked = False
+        player_bet = False
+        
+        for action in current_street_actions:
+            if action.get('seat_id') != seat_id and action.get('action') == 'check':
+                opponent_checked = True
+            elif action.get('seat_id') == seat_id and action.get('action') in ['bet', 'raise']:
+                player_bet = True
+        
+        if opponent_checked and player_bet:
+            return 1.0
+        
+        return 0.0
+    
+    def _detect_probe_bet(self, seat_id: int, action_sequence: list,
+                         static_ctx: StaticContext, dynamic_ctx: DynamicContext) -> float:
+        """
+        Detect if player made a probe bet.
+        
+        Probe bet: Bet out of position after the preflop aggressor checked back on previous street.
+        """
+        current_stage = static_ctx.game_state.stage
+        
+        # Need at least turn for probe bet
+        if current_stage < 2:
+            return 0.0
+        
+        # Check if player is out of position
+        dealer_seat = static_ctx.game_state.dealer_seat
+        is_out_of_position = (seat_id == dealer_seat)
+        
+        if not is_out_of_position:
+            return 0.0
+        
+        # Check if player bet first this street
+        first_bet_this_street = None
+        for action_seat_id, action_type, amount in action_sequence:
+            if action_type in ["bet", "raise"]:
+                first_bet_this_street = action_seat_id
+                break
+        
+        if first_bet_this_street != seat_id:
+            return 0.0
+        
+        # Check if preflop aggressor checked back on previous street
+        preflop_aggressor = dynamic_ctx.history_tracker.get_preflop_aggressor()
+        if preflop_aggressor is None:
+            return 0.0
+        
+        previous_street_history = dynamic_ctx.history_tracker.get_street_history(current_stage - 1)
+        if not previous_street_history:
+            return 0.0
+        
+        # Check if preflop aggressor checked on previous street
+        pf_aggressor_checked = False
+        for action in previous_street_history:
+            if (action.get('seat_id') == preflop_aggressor and 
+                action.get('action') == 'check'):
+                pf_aggressor_checked = True
+                break
+        
+        if pf_aggressor_checked:
+            return 1.0
+        
+        return 0.0
     

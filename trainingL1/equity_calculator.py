@@ -3,8 +3,17 @@
 
 import random
 import itertools
+import torch
+import os
 from typing import List, Tuple, Dict
 from deuces import Card, Evaluator
+
+try:
+    from ..range_predictor.range_network import RangeNetwork
+except ImportError:
+    import sys
+    sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+    from range_predictor.range_network import RangeNetwork
 
 
 class EquityCalculator:
@@ -608,4 +617,231 @@ class RangeConstructor:
                     combined[hand] = hand_weight * weight
                     
         return combined
+
+
+class RangeConstructorNN:
+    """
+    Neural Network-based Range Constructor.
+    
+    Uses a trained neural network to predict opponent hand properties
+    and builds accurate ranges based on these predictions.
+    """
+    
+    def __init__(self, model_path: str = 'range_predictor/range_predictor.pt', 
+                 feature_dim: int = 184, fallback_constructor: RangeConstructor = None):
+        """
+        Initialize the NN Range Constructor.
+        
+        Args:
+            model_path: Path to the trained range prediction model
+            feature_dim: Expected feature vector dimension
+            fallback_constructor: RangeConstructor to use if NN fails
+        """
+        self.model_path = model_path
+        self.feature_dim = feature_dim
+        self.model = None
+        self.device = torch.device('cpu')  # Use CPU for inference
+        
+        # Fallback to traditional range constructor if NN fails
+        self.fallback_constructor = fallback_constructor or RangeConstructor()
+        
+        # Hand rankings for range construction
+        self.HAND_RANKINGS = self.fallback_constructor.HAND_RANKINGS
+        self._hand_cache = self.fallback_constructor._hand_cache
+        
+        # Load the trained model
+        self._load_model()
+    
+    def _load_model(self):
+        """Load the trained range prediction model."""
+        try:
+            if os.path.exists(self.model_path):
+                # Load model checkpoint
+                checkpoint = torch.load(self.model_path, map_location=self.device)
+                
+                # Create model with correct architecture
+                self.model = RangeNetwork(input_dim=self.feature_dim)
+                self.model.load_state_dict(checkpoint['model_state_dict'])
+                self.model.eval()
+                
+                print(f"Loaded range prediction model from {self.model_path}")
+            else:
+                print(f"Range prediction model not found at {self.model_path}, using fallback")
+                self.model = None
+        except Exception as e:
+            print(f"Error loading range prediction model: {e}, using fallback")
+            self.model = None
+    
+    def construct_range(self, action_history: List[Dict], current_board: List[str],
+                       current_pot: int, opponent_stats: Dict = None, 
+                       opponent_features: List[float] = None) -> Dict[Tuple[str, str], float]:
+        """
+        Construct opponent range using neural network predictions.
+        
+        Args:
+            action_history: List of actions taken by opponent
+            current_board: Current board state
+            current_pot: Current pot size
+            opponent_stats: Opponent statistics (for fallback)
+            opponent_features: Complete feature vector for opponent
+            
+        Returns:
+            Dictionary of {hand: weight} representing opponent's likely range
+        """
+        # Use NN prediction if model is loaded and features are available
+        if self.model is not None and opponent_features is not None:
+            try:
+                return self._construct_range_from_nn(opponent_features)
+            except Exception as e:
+                print(f"Error in NN range construction: {e}, falling back")
+        
+        # Fallback to traditional range construction
+        return self.fallback_constructor.construct_range(
+            action_history, current_board, current_pot, opponent_stats
+        )
+    
+    def _construct_range_from_nn(self, features: List[float]) -> Dict[Tuple[str, str], float]:
+        """
+        Construct range using neural network predictions.
+        
+        Args:
+            features: Complete feature vector for opponent
+            
+        Returns:
+            Range dictionary with NN-predicted weights
+        """
+        # Convert features to tensor
+        features_tensor = torch.tensor(features, dtype=torch.float32).unsqueeze(0)
+        
+        # Get predictions from the model
+        with torch.no_grad():
+            predictions = self.model(features_tensor)
+        
+        # Extract property probabilities
+        properties = {}
+        for prop_name, prob_tensor in predictions.items():
+            properties[prop_name] = prob_tensor.squeeze().item()
+        
+        # Build range based on predicted properties
+        return self._build_range_from_properties(properties)
+    
+    def _build_range_from_properties(self, properties: Dict[str, float]) -> Dict[Tuple[str, str], float]:
+        """
+        Build a range dictionary from predicted hand properties.
+        
+        Args:
+            properties: Dictionary of hand property probabilities
+            
+        Returns:
+            Range dictionary with appropriate weights
+        """
+        range_dict = {}
+        
+        # Start with baseline range (top 40% of hands)
+        baseline_cutoff = int(len(self.HAND_RANKINGS) * 0.4)
+        baseline_hands = self.HAND_RANKINGS[:baseline_cutoff]
+        
+        # Convert hand rankings to our format and apply NN adjustments
+        for hand_str in baseline_hands:
+            # Get all card combinations for this hand
+            hand_combos = self._hand_cache.get(hand_str, [])
+            
+            for combo in hand_combos:
+                # Determine base weight (stronger hands get higher weight)
+                hand_index = self.HAND_RANKINGS.index(hand_str)
+                base_weight = 1.0 - (hand_index / len(self.HAND_RANKINGS))
+                
+                # Apply NN property adjustments
+                final_weight = self._adjust_weight_by_properties(
+                    hand_str, base_weight, properties
+                )
+                
+                # Only include hands with meaningful weight
+                if final_weight > 0.1:
+                    range_dict[combo] = final_weight
+        
+        # Normalize weights so they sum to reasonable total
+        if range_dict:
+            total_weight = sum(range_dict.values())
+            if total_weight > 0:
+                for hand in range_dict:
+                    range_dict[hand] /= total_weight
+                    range_dict[hand] *= len(range_dict) * 0.1  # Scale appropriately
+        
+        return range_dict
+    
+    def _adjust_weight_by_properties(self, hand_str: str, base_weight: float, 
+                                   properties: Dict[str, float]) -> float:
+        """
+        Adjust hand weight based on NN-predicted properties.
+        
+        Args:
+            hand_str: Hand string like 'AA', 'AKs', etc.
+            base_weight: Base weight from hand strength
+            properties: Predicted hand properties
+            
+        Returns:
+            Adjusted weight for this hand
+        """
+        multiplier = 1.0
+        
+        # Check hand category and apply property multipliers
+        if self._is_premium_pair(hand_str):
+            multiplier *= (1.0 + properties.get('premium_pair', 0.0) * 2.0)
+        elif self._is_mid_pair(hand_str):
+            multiplier *= (1.0 + properties.get('mid_pair', 0.0) * 1.5)
+        elif self._is_small_pair(hand_str):
+            multiplier *= (1.0 + properties.get('small_pair', 0.0) * 1.2)
+        elif self._is_suited_broadway(hand_str):
+            multiplier *= (1.0 + properties.get('suited_broadway', 0.0) * 1.8)
+        elif self._is_offsuit_broadway(hand_str):
+            multiplier *= (1.0 + properties.get('offsuit_broadway', 0.0) * 1.4)
+        elif self._is_suited_connector(hand_str):
+            multiplier *= (1.0 + properties.get('suited_connector', 0.0) * 1.3)
+        elif self._is_suited_ace(hand_str):
+            multiplier *= (1.0 + properties.get('suited_ace', 0.0) * 1.1)
+        else:
+            # Bluff candidates or other hands
+            multiplier *= (1.0 + properties.get('bluff_candidate', 0.0) * 0.8)
+        
+        return base_weight * multiplier
+    
+    def _is_premium_pair(self, hand_str: str) -> bool:
+        """Check if hand is a premium pair (TT+)."""
+        return hand_str in ['AA', 'KK', 'QQ', 'JJ', 'TT']
+    
+    def _is_mid_pair(self, hand_str: str) -> bool:
+        """Check if hand is a mid pair (66-99)."""
+        return hand_str in ['99', '88', '77', '66']
+    
+    def _is_small_pair(self, hand_str: str) -> bool:
+        """Check if hand is a small pair (22-55)."""
+        return hand_str in ['55', '44', '33', '22']
+    
+    def _is_suited_broadway(self, hand_str: str) -> bool:
+        """Check if hand is suited broadway (AKs-QJs)."""
+        return hand_str.endswith('s') and hand_str in ['AKs', 'AQs', 'AJs', 'KQs', 'KJs', 'QJs']
+    
+    def _is_offsuit_broadway(self, hand_str: str) -> bool:
+        """Check if hand is offsuit broadway (AKo-QJo)."""
+        return hand_str.endswith('o') and hand_str in ['AKo', 'AQo', 'AJo', 'KQo', 'KJo', 'QJo']
+    
+    def _is_suited_connector(self, hand_str: str) -> bool:
+        """Check if hand is a suited connector."""
+        if not hand_str.endswith('s') or len(hand_str) != 3:
+            return False
+        
+        rank_map = {'T': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14}
+        rank1 = rank_map.get(hand_str[0], int(hand_str[0]) if hand_str[0].isdigit() else 0)
+        rank2 = rank_map.get(hand_str[1], int(hand_str[1]) if hand_str[1].isdigit() else 0)
+        
+        return abs(rank1 - rank2) == 1 and min(rank1, rank2) >= 5
+    
+    def _is_suited_ace(self, hand_str: str) -> bool:
+        """Check if hand is a suited ace (A5s-A2s)."""
+        if not hand_str.endswith('s') or len(hand_str) != 3 or hand_str[0] != 'A':
+            return False
+        
+        second_rank = hand_str[1]
+        return second_rank in ['5', '4', '3', '2']
     

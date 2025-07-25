@@ -76,8 +76,8 @@ class NFSPTrainer:
         self.feature_extractor = FeatureExtractor(num_players=self.num_players)
         
         # 4. Initialize Networks
-        self.avg_pytorch_net = GTOPokerNet(input_size=507)
-        self.br_pytorch_net = GTOPokerNet(input_size=507)
+        self.avg_pytorch_net = GTOPokerNet(input_size=611)
+        self.br_pytorch_net = GTOPokerNet(input_size=611)
         
         # 5. Initialize Simulator with derived values
         self.stack_depth_simulator = None

@@ -9,7 +9,7 @@ from typing import Tuple, Optional
 
 class ActionSelector:
     """
-    CHOOSES actions for both players
+    CHOOSES actions (and bet size) for both players
     Handles action selection for both average strategy and best response networks.
     """
     

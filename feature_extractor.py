@@ -12,11 +12,11 @@ from feature_contexts import StaticContext, DynamicContext
 from poker_feature_schema import PokerFeatureSchema
 
 # Import new unified analyzers
-from analyzers.history_tracking import HistoryTracker
+from analyzers.street_history_tracking import HistoryTracker
 from analyzers.hand_analyzer import HandAnalyzer
 from analyzers.board_analyzer import BoardAnalyzer
 from analyzers.current_street_analyzer import CurrentStreetAnalyzer
-from analyzers.history_analyzer import HistoryAnalyzer
+from analyzers.street_history_analyzer import HistoryAnalyzer
 from analyzers.action_sequencer import ActionSequencer
 
 
@@ -156,6 +156,11 @@ class FeatureExtractor:
         )
         schema.additional_history = self._dict_to_additional_history_features(additional_history_data)
         
+        # === OPPONENT MODEL FEATURES ===
+        # Populate opponent statistical profile (if opponent_stats provided)
+        if opponent_stats:
+            schema.opponent_model = self._dict_to_opponent_model_features(opponent_stats)
+        
         # === FLATTEN TO VECTOR FOR ML MODEL ===
         feature_vector = schema.to_vector()
         
@@ -222,6 +227,10 @@ class FeatureExtractor:
     def _dict_to_additional_history_features(self, data: dict):
         from poker_feature_schema import AdditionalHistoryFeatures
         return AdditionalHistoryFeatures(**data)
+    
+    def _dict_to_opponent_model_features(self, data: dict):
+        from poker_feature_schema import OpponentModelFeatures
+        return OpponentModelFeatures(**data)
     
     # === DEBUGGING AND INTROSPECTION ===
     
@@ -429,7 +438,7 @@ class FeatureExtractor:
         """Validate that feature extraction produces expected vector size."""
         try:
             features, _ = self.extract_features(game_state, seat_id)
-            expected_size = 507
+            expected_size = 563
             actual_size = len(features)
             
             if actual_size != expected_size:

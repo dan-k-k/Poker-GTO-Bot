@@ -13,6 +13,45 @@ class StatsTracker:
     Tracks detailed opponent tendencies to enable:
     1. Better range construction for equity calculations (Layer 1)
     2. Exploitative strategy development (Layer 2)
+    
+    Statistics Tracked (45+ categories):
+    
+    Meta Statistics:
+    - total_hands, sample_size, last_updated_episode
+    
+    Pre-flop Statistics:
+    - vpip (Voluntarily Put money In Pot)
+    - pfr (Pre-Flop Raise)
+    - three_bet (3-bet percentage)
+    - fold_to_three_bet (Fold to 3-bet)
+    - limp (Limp percentage)
+    - preflop_fold_rate (Preflop fold rate)
+    
+    Post-flop Aggression:
+    - cbet_flop/turn/river (Continuation bet by street)
+    - aggression_frequency (Overall post-flop aggression)
+    
+    Post-flop Defense:
+    - fold_to_cbet_flop/turn/river (Fold to c-bet by street)
+    
+    Advanced Post-flop:
+    - checkraise_flop/turn (Check-raise by street)
+    - float (Float play - call flop, bet turn)
+    
+    Street-specific Folding:
+    - flop/turn/river_fold_rate (Fold rate by street)
+    - fold_frequency (Overall fold frequency)
+    
+    Showdown Statistics:
+    - wtsd (Went To Showdown)
+    - showdown_win_rate (W$SD - Won $ at Showdown)
+    
+    Bet Sizing & All-in:
+    - all_in_frequency (All-in frequency)
+    - avg_bet_size (Average bet sizing)
+    - avg_pot_ratio (Average bet-to-pot ratio)
+    
+    Uses sliding window (5000 hands) for recent opponent modeling.
     """
     
     def __init__(self, filepath='training_output/player_stats.json', window_size=5000):
@@ -48,6 +87,88 @@ class StatsTracker:
         
         if 'fold_to_three_bet_opportunity' in events:
             stats['fold_to_three_bet_history'].append(1 if events.get('fold_to_three_bet_action', False) else 0)
+        
+        # NEW: Per-street strategic actions
+        # 3-bet opportunities by street
+        for street in ['preflop', 'flop', 'turn', 'river']:
+            if f'{street}_three_bet_opportunity' in events:
+                stats[f'three_bet_{street}_history'].append(1 if events.get(f'{street}_three_bet_action', False) else 0)
+        
+        # Check-raise opportunities (flop, turn, river)
+        if 'checkraise_river_opportunity' in events:
+            stats['checkraise_river_history'].append(1 if events.get('checkraise_river_action', False) else 0)
+        
+        # Donk bet opportunities by street
+        for street in ['flop', 'turn', 'river']:
+            if f'{street}_donk_bet_opportunity' in events:
+                stats[f'donk_bet_{street}_history'].append(1 if events.get(f'{street}_donk_bet_action', False) else 0)
+        
+        # Probe bet opportunities (turn, river)
+        for street in ['turn', 'river']:
+            if f'{street}_probe_bet_opportunity' in events:
+                stats[f'probe_bet_{street}_history'].append(1 if events.get(f'{street}_probe_bet_action', False) else 0)
+        
+        # Float bet (renamed from float)
+        if 'float_bet_opportunity' in events:
+            stats['float_bet_history'].append(1 if events.get('float_bet_action', False) else 0)
+        
+        # === ADVANCED BETTING PATTERNS ===
+        
+        # Multi-Street Aggression Patterns
+        if 'double_barrel_opportunity' in events:
+            stats['double_barrel_history'].append(1 if events.get('double_barrel_action', False) else 0)
+            
+        if 'triple_barrel_opportunity' in events:
+            stats['triple_barrel_history'].append(1 if events.get('triple_barrel_action', False) else 0)
+            
+        if 'delayed_cbet_opportunity' in events:
+            stats['delayed_cbet_history'].append(1 if events.get('delayed_cbet_action', False) else 0)
+        
+        # Positional Betting Tendencies
+        if 'steal_attempt_opportunity' in events:
+            stats['steal_attempt_history'].append(1 if events.get('steal_attempt_action', False) else 0)
+            
+        if 'fold_to_steal_opportunity' in events:
+            stats['fold_to_steal_history'].append(1 if events.get('fold_to_steal_action', False) else 0)
+            
+        if 'button_isolation_opportunity' in events:
+            stats['button_isolation_history'].append(1 if events.get('button_isolation_action', False) else 0)
+        
+        # Advanced Defensive and Deceptive Lines
+        if 'fold_vs_flop_checkraise_opportunity' in events:
+            stats['fold_vs_flop_checkraise_history'].append(1 if events.get('fold_vs_flop_checkraise_action', False) else 0)
+            
+        if 'limp_reraise_opportunity' in events:
+            stats['limp_reraise_history'].append(1 if events.get('limp_reraise_action', False) else 0)
+            
+        if 'slowplay_opportunity' in events:
+            stats['slowplay_frequency_history'].append(1 if events.get('slowplay_action', False) else 0)
+        
+        # Bet Sizing Tells
+        if 'river_overbet_opportunity' in events:
+            stats['river_overbet_history'].append(1 if events.get('river_overbet_action', False) else 0)
+            
+        # Multi-Street Continuation Patterns
+        if 'turn_probe_after_check_opportunity' in events:
+            stats['turn_probe_after_check_history'].append(1 if events.get('turn_probe_after_check_action', False) else 0)
+            
+        if 'river_probe_after_check_opportunity' in events:
+            stats['river_probe_after_check_history'].append(1 if events.get('river_probe_after_check_action', False) else 0)
+            
+        if 'barrel_give_up_turn_opportunity' in events:
+            stats['barrel_give_up_turn_history'].append(1 if events.get('barrel_give_up_turn_action', False) else 0)
+            
+        if 'barrel_give_up_river_opportunity' in events:
+            stats['barrel_give_up_river_history'].append(1 if events.get('barrel_give_up_river_action', False) else 0)
+        
+        # Bet sizing with hand strength context (for Layer 2 exploitative features)
+        if 'value_bet_sizes' in events and events['value_bet_sizes']:
+            for bet_size in events['value_bet_sizes']:
+                stats['value_bet_sizes'].append(bet_size)
+                
+        if 'bluff_bet_sizes' in events and events['bluff_bet_sizes']:
+            for bet_size in events['bluff_bet_sizes']:
+                stats['bluff_bet_sizes'].append(bet_size)
         
         if 'limp_opportunity' in events:
             stats['limp_history'].append(1 if events.get('limp_action', False) else 0)
@@ -160,7 +281,52 @@ class StatsTracker:
             # Advanced post-flop stats (sliding window)
             "checkraise_flop_history": deque(maxlen=self.window_size),
             "checkraise_turn_history": deque(maxlen=self.window_size),
-            "float_history": deque(maxlen=self.window_size),  # Call flop, bet turn
+            "checkraise_river_history": deque(maxlen=self.window_size),
+            "float_bet_history": deque(maxlen=self.window_size),  # Call flop, bet turn (renamed from float)
+            
+            # Strategic actions per street (NEW - sliding window)
+            # 3-bet opportunities by street
+            "three_bet_preflop_history": deque(maxlen=self.window_size),
+            "three_bet_flop_history": deque(maxlen=self.window_size), 
+            "three_bet_turn_history": deque(maxlen=self.window_size),
+            "three_bet_river_history": deque(maxlen=self.window_size),
+            
+            # Donk bet opportunities by street  
+            "donk_bet_flop_history": deque(maxlen=self.window_size),
+            "donk_bet_turn_history": deque(maxlen=self.window_size),
+            "donk_bet_river_history": deque(maxlen=self.window_size),
+            
+            # Probe bet opportunities (turn+ only)
+            "probe_bet_turn_history": deque(maxlen=self.window_size),
+            "probe_bet_river_history": deque(maxlen=self.window_size),
+            
+            # === ADVANCED BETTING PATTERNS (NEW) ===
+            
+            # Multi-Street Aggression Patterns
+            "double_barrel_history": deque(maxlen=self.window_size),        # Bet turn after c-betting flop
+            "triple_barrel_history": deque(maxlen=self.window_size),        # Bet river after betting flop+turn
+            "delayed_cbet_history": deque(maxlen=self.window_size),         # Bet turn after checking flop (PF aggressor)
+            
+            # Positional Betting Tendencies
+            "steal_attempt_history": deque(maxlen=self.window_size),        # Raise from late position when folded to
+            "fold_to_steal_history": deque(maxlen=self.window_size),        # Fold in blinds vs late position raise
+            "button_isolation_history": deque(maxlen=self.window_size),     # Isolate limpers from button
+            
+            # Advanced Defensive and Deceptive Lines
+            "fold_vs_flop_checkraise_history": deque(maxlen=self.window_size),  # Fold when c-bet gets check-raised
+            "limp_reraise_history": deque(maxlen=self.window_size),         # 3-bet after limping (trapping)
+            "slowplay_frequency_history": deque(maxlen=self.window_size),   # Check strong hands for deception
+            
+            # Bet Sizing Tells (Layer 2 exploitative features)
+            "river_overbet_history": deque(maxlen=self.window_size),        # Overbet (>100% pot) on river
+            "value_bet_sizes": deque(maxlen=self.window_size),              # Bet sizes with value hands
+            "bluff_bet_sizes": deque(maxlen=self.window_size),              # Bet sizes with bluff hands
+            
+            # Multi-Street Continuation Patterns
+            "turn_probe_after_check_history": deque(maxlen=self.window_size),    # Bet turn after checking flop OOP
+            "river_probe_after_check_history": deque(maxlen=self.window_size),   # Bet river after checking turn OOP
+            "barrel_give_up_turn_history": deque(maxlen=self.window_size),       # Give up turn after c-betting flop
+            "barrel_give_up_river_history": deque(maxlen=self.window_size),      # Give up river after betting flop+turn
             
             # Overall tendencies (sliding window)
             "aggression_frequency_history": deque(maxlen=self.window_size),  # 1=aggressive action, 0=passive
@@ -507,7 +673,25 @@ class StatsTracker:
             # Advanced stats (from sliding window)
             'checkraise_flop': safe_percentage_from_history(raw['checkraise_flop_history']),
             'checkraise_turn': safe_percentage_from_history(raw['checkraise_turn_history']),
+            'checkraise_river': safe_percentage_from_history(raw['checkraise_river_history']),
+            'float_bet': safe_percentage_from_history(raw['float_bet_history']),
             'aggression_frequency': safe_percentage_from_history(raw['aggression_frequency_history']),
+            
+            # NEW: Per-street strategic actions (from sliding window)
+            # 3-bet by street
+            'three_bet_preflop': safe_percentage_from_history(raw['three_bet_preflop_history']),
+            'three_bet_flop': safe_percentage_from_history(raw['three_bet_flop_history']),
+            'three_bet_turn': safe_percentage_from_history(raw['three_bet_turn_history']),
+            'three_bet_river': safe_percentage_from_history(raw['three_bet_river_history']),
+            
+            # Donk bet by street
+            'donk_bet_flop': safe_percentage_from_history(raw['donk_bet_flop_history']),
+            'donk_bet_turn': safe_percentage_from_history(raw['donk_bet_turn_history']),
+            'donk_bet_river': safe_percentage_from_history(raw['donk_bet_river_history']),
+            
+            # Probe bet by street
+            'probe_bet_turn': safe_percentage_from_history(raw['probe_bet_turn_history']),
+            'probe_bet_river': safe_percentage_from_history(raw['probe_bet_river_history']),
             
             # Showdown stats (from sliding window)
             'wtsd': safe_percentage_from_history(raw['wtsd_history']),
@@ -526,7 +710,43 @@ class StatsTracker:
             # Bet sizing analysis (for Layer 2)
             'avg_bet_size': safe_average_from_values(raw['bet_sizes']),
             'avg_pot_ratio': safe_average_from_values(raw['pot_ratios']),
+            
+            # === ADVANCED BETTING PATTERNS ===
+            
+            # Multi-Street Aggression Patterns
+            'double_barrel': safe_percentage_from_history(raw['double_barrel_history']),
+            'triple_barrel': safe_percentage_from_history(raw['triple_barrel_history']),
+            'delayed_cbet': safe_percentage_from_history(raw['delayed_cbet_history']),
+            
+            # Positional Betting Tendencies
+            'steal_attempt': safe_percentage_from_history(raw['steal_attempt_history']),
+            'fold_to_steal': safe_percentage_from_history(raw['fold_to_steal_history']),
+            'button_isolation': safe_percentage_from_history(raw['button_isolation_history']),
+            
+            # Advanced Defensive and Deceptive Lines
+            'fold_vs_flop_checkraise': safe_percentage_from_history(raw['fold_vs_flop_checkraise_history']),
+            'limp_reraise': safe_percentage_from_history(raw['limp_reraise_history']),
+            'slowplay_frequency': safe_percentage_from_history(raw['slowplay_frequency_history']),
+            
+            # Bet Sizing Tells (Layer 2 exploitative gold)
+            'river_overbet_frequency': safe_percentage_from_history(raw['river_overbet_history']),
+            'value_bet_sizing': safe_average_from_values(raw['value_bet_sizes']),
+            'bluff_bet_sizing': safe_average_from_values(raw['bluff_bet_sizes']),
+            
+            # Multi-Street Continuation Patterns
+            'turn_probe_after_check': safe_percentage_from_history(raw['turn_probe_after_check_history']),
+            'river_probe_after_check': safe_percentage_from_history(raw['river_probe_after_check_history']),
+            'barrel_give_up_turn': safe_percentage_from_history(raw['barrel_give_up_turn_history']),
+            'barrel_give_up_river': safe_percentage_from_history(raw['barrel_give_up_river_history']),
         }
+        
+        # Calculate bet sizing tell strength (exploitability measure)
+        if percentages['value_bet_sizing'] > 0 and percentages['bluff_bet_sizing'] > 0:
+            percentages['sizing_tell_strength'] = abs(percentages['value_bet_sizing'] - percentages['bluff_bet_sizing'])
+        else:
+            percentages['sizing_tell_strength'] = 0.0
+            
+        return percentages
     
     def save_stats(self):
         """Save current stats to disk, converting deques to lists."""
