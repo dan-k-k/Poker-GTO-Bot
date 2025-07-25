@@ -1,0 +1,71 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyTorch models
+*.pt
+*.pth
+
+# Training outputs
+*.json
+*.png
+*.log
+training_state.json
+training_plots_data.json
+training_progress.png
+loss_curves.png
+
+# Statistics and model files
+hero_stats.json
+mlp_model_trained.json
+neural_gto_agent.json
+neural_exploiter_agent.json
+gto_average_strategy.json
+gto_best_response.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Environment
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/CLAUDE.md
+IMPLEMENTATION_GUIDELINES.md
+
+# Project documentation (local only)
+CLAUDE.md
+IMPLEMENTATION_GUIDELINES.md
