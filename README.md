@@ -4,7 +4,7 @@ A modular poker AI training system with schema-aligned feature extraction and un
 
 Current aim is to provide the AI with thorough equity and implied odds calculations by predicting opponent's range. 
 
-Goals include: Debugging -> enhanced GTO convergence -> multi-way action (currently trains for heads-up) -> integration with a greedy exploiter layer that looks closer at opponent stats -> make playable online – anyone can practise and discover their own tendencies.
+Goals include: Debugging -> enhanced GTO convergence -> multi-way action (currently trains for heads-up) -> integration with a greedy exploiter layer that looks closer at opponent stats -> make playable online – anyone can practise and discover their own hidden tendencies.
 
 ## Quick Start
 
