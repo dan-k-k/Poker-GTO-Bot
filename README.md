@@ -1,14 +1,15 @@
-# Texas Hold'em Poker AI Training System  
+# Texas Hold'em GTO Poker AI [INCOMPLETE]
 
 A modular poker AI training system with schema-aligned feature extraction and unified analyzer architecture for Game Theory Optimal (GTO) training.
+Current aim is to provide the AI with thorough equity and implied odds calculations by predicting opponent's range. 
 
 ## Quick Start
 
 ```bash
-# Train the GTO agent (Layer 1 - current primary training)
+# Train the GTO agent (Layer 1 - current primary training) [will not run as of now – currently debugging]
 python trainingL1/train_L1.py
 
-# Play against the AI
+# Play against an opponent [currently performs random actions – not GTO]
 python playgame.py
 ```
 
@@ -29,6 +30,7 @@ python playgame.py
 - **Feature Contexts**: Static and dynamic context separation for efficient processing
 - **Layer 1 GTO Training**: Neural network-based training in trainingL1/ directory
 - **Modular Design**: Clear separation between core engine, feature extraction, and training
+- **Dynamic Opponent Modeling & Range Prediction**: Incorporates historical statistics (VPIP, PFR, etc.) and utilizes a novel auxiliary neural network for real-time opponent range estimation.
 
 ## Architecture Overview
 
@@ -44,6 +46,9 @@ python playgame.py
 - **analyzers/current_street_analyzer.py**: Non-history current state features
 - **analyzers/history_analyzer.py**: History-tracked features with proper integration
 - **analyzers/history_tracking.py**: Comprehensive game state history tracking
+- **analyzers/event_identifier.py**: Monotonic signals on player playstyle (VPIP, PFR, etc.)
+
+### Range Predictor Components
 
 ### Training System
 - **trainingL1/train_L1.py**: Main Layer 1 training script

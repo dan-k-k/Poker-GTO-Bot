@@ -17,7 +17,7 @@
 - Complete heads-up poker AI with rich feature extraction
 - Neural Fictitious Self-Play (NFSP) training for GTO convergence
 - Robust feature engineering with monotonic + one-hot encoding
-- 172-dimensional feature space with complete board representation
+- 611 -dimensional feature space with complete board representation
 - train via CFR agent and true regret found via true counterfactual branching
 
 ### Layer 2 (Future): Exploitative Adaptation Layer
