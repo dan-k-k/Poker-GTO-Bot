@@ -6,6 +6,8 @@ Current aim is to provide the AI with thorough equity and implied odds calculati
 
 Goals include: Debugging -> enhanced GTO convergence -> multi-way action (currently trains for heads-up) -> integration with a greedy exploiter layer that looks closer at opponent stats -> make playable online – anyone can practise and discover their own hidden tendencies.
 
+Delete all files in the training_output folder if you would like to train from zero.
+
 ## Quick Start
 
 ```bash

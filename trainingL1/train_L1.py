@@ -169,25 +169,25 @@ class NFSPTrainer:
             episodes: Total number of episodes to train (including already completed)
             hands_per_episode: Number of hands per episode (can be changed when resuming)
         """
-        print("🎯 Pure GTO Training with Neural Fictitious Self-Play")
+        print("  Pure GTO Training with Neural Fictitious Self-Play")
         print("=" * 60)
         
         # Display stack depth simulation info
         if self.stack_depth_simulator:
-            print(f"📊 Stack Depth Simulation Enabled:")
+            print(f"  Stack Depth Simulation Enabled:")
             print(f"   Session Length: {self.stack_depth_simulator.session_length} hands")
             print(f"   Mean Stack: {self.stack_depth_simulator.mean_stack_bb} BB")
             print(f"   Std Dev: {self.stack_depth_simulator.std_stack_bb} BB")
             print(f"   Min Stack: {self.stack_depth_simulator.min_stack_bb} BB")
         else:
-            print("📊 Stack Depth Simulation: Disabled (every hand reset)")
+            print("  Stack Depth Simulation: Disabled (every hand reset)")
         
         # Load previous training state
         start_episode = TrainingUtils.load_training_state(self)
         
         # Parameter change warnings
         if start_episode > 0:
-            print(f"ℹ️  Training parameters for resumed session:")
+            print(f"ℹ   Training parameters for resumed session:")
             print(f"   Episodes: {episodes} (continuing from {start_episode})")
             print(f"   Hands per episode: {hands_per_episode}")
             print(f"   Note: Changing hands_per_episode is safe and won't affect model quality")
@@ -370,7 +370,7 @@ class NFSPTrainer:
             # Print AS diagnostics every 12 AS episodes showing period changes
             if self.as_episodes_since_last_report >= 12:
                 print("\n" + "="*50)
-                print(f"📈 AS AGENT DIAGNOSTICS (Last {self.as_episodes_since_last_report} AS Episodes)")
+                print(f"  AS AGENT DIAGNOSTICS (Last {self.as_episodes_since_last_report} AS Episodes)")
                 print("="*50)
                 as_agent_id = "average_strategy_v1"
                 current_stats = self.stats_tracker.get_player_percentages(as_agent_id)
@@ -391,7 +391,7 @@ class NFSPTrainer:
             # Print BR diagnostics every 6 BR episodes showing period changes
             if self.br_episodes_since_last_report >= 6:
                 print("\n" + "="*50)
-                print(f"🤖 BR AGENT DIAGNOSTICS (Last {self.br_episodes_since_last_report} BR Episodes)")
+                print(f"  BR AGENT DIAGNOSTICS (Last {self.br_episodes_since_last_report} BR Episodes)")
                 print("="*50)
                 br_agent_id = "best_response_v1"
                 current_stats = self.stats_tracker.get_player_percentages(br_agent_id)
@@ -440,7 +440,7 @@ class NFSPTrainer:
                 # Optional: Still calculate AS validation loss for monitoring
                 if len(self.network_trainer.as_validation_buffer) > 100:
                     val_loss = self.network_trainer.calculate_as_validation_loss()
-                    print(f"📊 AS Validation Loss: {val_loss:.6f} (monitoring only)")
+                    print(f"  AS Validation Loss: {val_loss:.6f} (monitoring only)")
                         
         print("\n🏆 GTO Training Completed!")
         TrainingUtils.save_models(self.avg_pytorch_net, self.br_pytorch_net, self.current_episode)
@@ -454,15 +454,15 @@ class NFSPTrainer:
         
         # Determine phase (matches new evaluator schedule)
         if episode < 10:
-            phase = f"📚 PHASE 1: Bootstrap (BR Training)"
+            phase = f"  PHASE 1: Bootstrap (BR Training)"
             phase_progress = f"{episode+1}/10"
         else:
             cycle = (episode - 10) // 3 + 1
             cycle_pos = (episode - 10) % 3 + 1
-            phase = f"🔄 PHASE 2: Alternating 1BR:2AS (Cycle {cycle})"
+            phase = f"  PHASE 2: Alternating 1BR:2AS (Cycle {cycle})"
             phase_progress = f"{cycle_pos}/3"
         
-        training_type = "🤖 BR Training" if train_best_response else "📈 AS Training"
+        training_type = "  BR Training" if train_best_response else "  AS Training"
         debug_indicator = " (debug)" if (episode % 5 == 0) else ""
         
         print(f"{phase} | Progress: {phase_progress}")
@@ -478,23 +478,23 @@ class NFSPTrainer:
         """Print AS-specific training metrics."""
         reservoir_size = len(self.network_trainer.reservoir_buffer)
         validation_size = len(self.network_trainer.as_validation_buffer)
-        print(f"📊 AS Buffers: Reservoir={reservoir_size} | Validation={validation_size}")
+        print(f"  AS Buffers: Reservoir={reservoir_size} | Validation={validation_size}")
         
         if len(self.as_training_losses) > 0:
             recent_losses = list(self.as_training_losses)[-3:]  # Last 3 only
             avg_loss = sum(recent_losses) / len(recent_losses) if recent_losses else 0
-            print(f"📈 AS Performance: Avg Loss={avg_loss:.4f} (last {len(recent_losses)} episodes)")
+            print(f"  AS Performance: Avg Loss={avg_loss:.4f} (last {len(recent_losses)} episodes)")
     
     def _print_br_metrics(self):
         """Print BR-specific training metrics."""
         training_size = len(self.network_trainer.br_buffer)
         validation_size = len(self.network_trainer.br_validation_buffer)
-        print(f"📊 BR Buffers: Training={training_size} | Validation={validation_size}")
+        print(f"  BR Buffers: Training={training_size} | Validation={validation_size}")
         
         if len(self.network_trainer.br_validation_losses) > 0:
             recent_val = list(self.network_trainer.br_validation_losses)[-3:]  # Last 3 only
             avg_val = sum(recent_val) / len(recent_val) if recent_val else float('inf')
-            print(f"📈 BR Performance: Avg Val Loss={avg_val:.4f} (last {len(recent_val)} episodes)")
+            print(f"  BR Performance: Avg Val Loss={avg_val:.4f} (last {len(recent_val)} episodes)")
     
     def _process_as_experiences(self, experiences):
         """Process AS experiences for NFSP training."""

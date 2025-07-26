@@ -172,8 +172,8 @@ class LiveFeatureDebugger:
         made_hand = self.get_made_hand_string(schema)
         kickers = self.get_kickers_string(schema)
         
-        lines.append(f"    🃏 Cards: {' '.join(hole_cards)} (hole) + {' '.join(board_cards)} (board)")
-        lines.append(f"    💪 Hand: {made_hand} | Kickers: {kickers}")
+        lines.append(f"     Cards: {' '.join(hole_cards)} (hole) + {' '.join(board_cards)} (board)")
+        lines.append(f"     Hand: {made_hand} | Kickers: {kickers}")
         
         # Strength metrics
         hand_strength = schema.current_additional.hand_strength
@@ -188,29 +188,29 @@ class LiveFeatureDebugger:
         # Stack and pot dynamics
         stack = schema.hero_current_stack
         actual_stack_bb = stack.stack_in_bb * 200.0 if stack.stack_in_bb <= 1.0 else stack.stack_in_bb
-        lines.append(f"    💰 Stack: {actual_stack_bb:.1f}BB | Pot Odds: {stack.pot_odds:.3f} | Call Cost: {stack.call_cost_ratio:.3f}")
-        lines.append(f"    📈 Commitment: {stack.total_commitment:.1%} total | {stack.current_street_commitment_vs_starting_stack:.1%} this street")
+        lines.append(f"     Stack: {actual_stack_bb:.1f}BB | Pot Odds: {stack.pot_odds:.3f} | Call Cost: {stack.call_cost_ratio:.3f}")
+        lines.append(f"     Commitment: {stack.total_commitment:.1%} total | {stack.current_street_commitment_vs_starting_stack:.1%} this street")
         
         # Strategic features
         additional = schema.current_additional
-        lines.append(f"    🎯 Strategic: SPR {additional.effective_spr:.2f} | Implied Odds {additional.implied_odds:.3f}")
+        lines.append(f"     Strategic: SPR {additional.effective_spr:.2f} | Implied Odds {additional.implied_odds:.3f}")
         
         # Position and action context
         position = self.get_position_string(schema)
         street = self.get_street_string(schema)
         facing = self.get_facing_string(schema)
-        lines.append(f"    📍 Context: {street} | {position} | Facing: {facing}")
+        lines.append(f"     Context: {street} | {position} | Facing: {facing}")
         
         # Action history (current street)
         seq = schema.hero_current_sequence
         if seq.checked_count > 0 or seq.raised_count > 0:
             aggression = seq.raised_count / (seq.checked_count + seq.raised_count) if (seq.checked_count + seq.raised_count) > 0 else 0
-            lines.append(f"    🎬 Actions: Check×{seq.checked_count:.0f} | Raise×{seq.raised_count:.0f} | Aggression: {aggression:.1%}")
+            lines.append(f"     Actions: Check×{seq.checked_count:.0f} | Raise×{seq.raised_count:.0f} | Aggression: {aggression:.1%}")
         
         # Strategic actions on current street
         strategic_actions = self.get_current_street_strategic_actions(schema)
         if strategic_actions:
-            lines.append(f"    🎭 Strategic: {strategic_actions}")
+            lines.append(f"     Strategic: {strategic_actions}")
         
         lines.append(f"    =======================================")
         
@@ -235,14 +235,14 @@ class LiveFeatureDebugger:
         
         if significant_equity:
             direction = "improved" if deltas.equity_delta > 0 else "worsened"
-            lines.append(f"      🎯 Equity {direction} by {abs(deltas.equity_delta):.1%}")
+            lines.append(f"       Equity {direction} by {abs(deltas.equity_delta):.1%}")
         
         if significant_spr:
             direction = "increased" if deltas.spr_delta > 0 else "decreased"
-            lines.append(f"      📊 SPR {direction} by {abs(deltas.spr_delta):.2f}")
+            lines.append(f"       SPR {direction} by {abs(deltas.spr_delta):.2f}")
         
         if significant_pot:
-            lines.append(f"      💰 Pot grew by {deltas.pot_size_delta:.1f} BB")
+            lines.append(f"       Pot grew by {deltas.pot_size_delta:.1f} BB")
         
         return '\n'.join(lines)
     
@@ -265,7 +265,7 @@ class LiveFeatureDebugger:
         opp_strategic = self.get_opponent_strategic_actions(schema)
         strategic_text = f" | Strategic: {opp_strategic}" if opp_strategic else ""
         
-        return f"    👤 Opponent: {opp_stack_bb:.0f}BB stack | {opp_commitment:.1%} committed | {opp_aggression:.1%} aggression{strategic_text}"
+        return f"     Opponent: {opp_stack_bb:.0f}BB stack | {opp_commitment:.1%} committed | {opp_aggression:.1%} aggression{strategic_text}"
     
     def format_opponent_model_stats(self, schema: PokerFeatureSchema) -> str:
         """
@@ -276,15 +276,15 @@ class LiveFeatureDebugger:
         
         # Check if we have meaningful stats (sample size > 0)
         if opp_model.sample_size < 1.0:
-            return "    📊 Opponent Model: No statistical data yet"
+            return "     Opponent Model: No statistical data yet"
         
-        lines = [f"    📊 OPPONENT MODEL STATS (Sample: {opp_model.sample_size:.0f} hands)"]
+        lines = [f"     OPPONENT MODEL STATS (Sample: {opp_model.sample_size:.0f} hands)"]
         
         # Core preflop stats
-        lines.append(f"      🎯 Core: VPIP {opp_model.vpip:.1%} | PFR {opp_model.pfr:.1%} | 3-bet {opp_model.three_bet_preflop:.1%}")
+        lines.append(f"       Core: VPIP {opp_model.vpip:.1%} | PFR {opp_model.pfr:.1%} | 3-bet {opp_model.three_bet_preflop:.1%}")
         
         # Post-flop aggression
-        lines.append(f"      🔥 Aggression: C-bet {opp_model.cbet_flop:.1%}/{opp_model.cbet_turn:.1%}/{opp_model.cbet_river:.1%} | Overall {opp_model.aggression_frequency:.1%}")
+        lines.append(f"       Aggression: C-bet {opp_model.cbet_flop:.1%}/{opp_model.cbet_turn:.1%}/{opp_model.cbet_river:.1%} | Overall {opp_model.aggression_frequency:.1%}")
         
         # Strategic patterns (show if any are > 5%)
         strategic_patterns = []
@@ -298,18 +298,18 @@ class LiveFeatureDebugger:
             strategic_patterns.append(f"C/R {opp_model.checkraise_flop:.1%}")
         
         if strategic_patterns:
-            lines.append(f"      🎭 Patterns: {' | '.join(strategic_patterns)}")
+            lines.append(f"       Patterns: {' | '.join(strategic_patterns)}")
         
         # Fold tendencies
-        lines.append(f"      🛡️ Defense: Fold vs C-bet {opp_model.fold_to_cbet_flop:.1%}/{opp_model.fold_to_cbet_turn:.1%}/{opp_model.fold_to_cbet_river:.1%}")
+        lines.append(f"       Defense: Fold vs C-bet {opp_model.fold_to_cbet_flop:.1%}/{opp_model.fold_to_cbet_turn:.1%}/{opp_model.fold_to_cbet_river:.1%}")
         
         # Showdown stats (if available)
         if opp_model.wtsd > 0:
-            lines.append(f"      🏆 Showdown: WTSD {opp_model.wtsd:.1%} | Win Rate {opp_model.showdown_win_rate:.1%}")
+            lines.append(f"       Showdown: WTSD {opp_model.wtsd:.1%} | Win Rate {opp_model.showdown_win_rate:.1%}")
         
         # Bet sizing info
         if opp_model.avg_bet_size > 0:
-            lines.append(f"      💰 Sizing: Avg {opp_model.avg_bet_size:.1f} BB | Pot Ratio {opp_model.avg_pot_ratio:.2f}")
+            lines.append(f"       Sizing: Avg {opp_model.avg_bet_size:.1f} BB | Pot Ratio {opp_model.avg_pot_ratio:.2f}")
         
         # Per-street strategic actions (if any show patterns)
         street_patterns = []
@@ -321,7 +321,7 @@ class LiveFeatureDebugger:
             street_patterns.append(f"C/R F/T/R: {opp_model.checkraise_flop:.1%}/{opp_model.checkraise_turn:.1%}/{opp_model.checkraise_river:.1%}")
         
         if street_patterns:
-            lines.append(f"      🎪 Street Patterns: {' | '.join(street_patterns)}")
+            lines.append(f"       Street Patterns: {' | '.join(street_patterns)}")
         
         return '\n'.join(lines)
     

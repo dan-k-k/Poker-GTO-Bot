@@ -237,13 +237,13 @@ class TrainingUtils:
             vpip = sum(training_stats['vpip']) / len(training_stats['vpip'])
             pfr = sum(training_stats['pfr']) / len(training_stats['pfr'])
             
-            print(f"🎯 All-in Frequency: {all_in_freq:.1%}")
-            print(f"📉 Fold Frequency: {fold_freq:.1%}")
-            print(f"🎲 Avg Actions/Hand: {avg_hand_len:.1f}")
-            print(f"🏁 Showdown Frequency: {showdown_freq:.1%}")
-            print(f"📈 Bet/Raise Frequency: {bet_raise_freq:.1%}")
-            print(f"💰 VPIP (Pre-flop Play): {vpip:.1%}")
-            print(f"🔥 PFR (Pre-flop Raise): {pfr:.1%}")
+            print(f" All-in Frequency: {all_in_freq:.1%}")
+            print(f" Fold Frequency: {fold_freq:.1%}")
+            print(f" Avg Actions/Hand: {avg_hand_len:.1f}")
+            print(f" Showdown Frequency: {showdown_freq:.1%}")
+            print(f" Bet/Raise Frequency: {bet_raise_freq:.1%}")
+            print(f" VPIP (Pre-flop Play): {vpip:.1%}")
+            print(f" PFR (Pre-flop Raise): {pfr:.1%}")
             
             # Provide interpretations
             if all_in_freq > 0.15:
