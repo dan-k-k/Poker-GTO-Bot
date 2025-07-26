@@ -29,10 +29,14 @@ MANIFEST
 *.json
 *.png
 *.log
+*.jsonl
+*.pkl 
 training_state.json
 training_plots_data.json
 training_progress.png
 loss_curves.png
+range_training_data.jsonl
+training_buffers.pkl
 
 # Statistics and model files
 hero_stats.json
