@@ -50,7 +50,7 @@ class DataCollector:
         self.live_debugger = LiveFeatureDebugger()
         
         # Range training data collection
-        self.range_data_file = 'trainingL1/range_training_data.jsonl'
+        self.range_data_file = 'training_output/range_training_data.jsonl'
         self.range_data_buffer = []
         self.range_data_batch_size = 100  # Write in batches for efficiency
         
