@@ -207,6 +207,11 @@ class LiveFeatureDebugger:
             aggression = seq.raised_count / (seq.checked_count + seq.raised_count) if (seq.checked_count + seq.raised_count) > 0 else 0
             lines.append(f"    🎬 Actions: Check×{seq.checked_count:.0f} | Raise×{seq.raised_count:.0f} | Aggression: {aggression:.1%}")
         
+        # Strategic actions on current street
+        strategic_actions = self.get_current_street_strategic_actions(schema)
+        if strategic_actions:
+            lines.append(f"    🎭 Strategic: {strategic_actions}")
+        
         lines.append(f"    =======================================")
         
         return '\n'.join(lines)
@@ -256,7 +261,113 @@ class LiveFeatureDebugger:
         opp_total_actions = opp_seq.checked_count + opp_seq.raised_count
         opp_aggression = opp_seq.raised_count / opp_total_actions if opp_total_actions > 0 else 0
         
-        return f"    👤 Opponent: {opp_stack_bb:.0f}BB stack | {opp_commitment:.1%} committed | {opp_aggression:.1%} aggression this street"
+        # Get opponent's strategic actions this street
+        opp_strategic = self.get_opponent_strategic_actions(schema)
+        strategic_text = f" | Strategic: {opp_strategic}" if opp_strategic else ""
+        
+        return f"    👤 Opponent: {opp_stack_bb:.0f}BB stack | {opp_commitment:.1%} committed | {opp_aggression:.1%} aggression{strategic_text}"
+    
+    def format_opponent_model_stats(self, schema: PokerFeatureSchema) -> str:
+        """
+        Format detailed opponent modeling statistics from the stats tracker.
+        Shows core stats to verify the opponent modeling system is working.
+        """
+        opp_model = schema.opponent_model
+        
+        # Check if we have meaningful stats (sample size > 0)
+        if opp_model.sample_size < 1.0:
+            return "    📊 Opponent Model: No statistical data yet"
+        
+        lines = [f"    📊 OPPONENT MODEL STATS (Sample: {opp_model.sample_size:.0f} hands)"]
+        
+        # Core preflop stats
+        lines.append(f"      🎯 Core: VPIP {opp_model.vpip:.1%} | PFR {opp_model.pfr:.1%} | 3-bet {opp_model.three_bet_preflop:.1%}")
+        
+        # Post-flop aggression
+        lines.append(f"      🔥 Aggression: C-bet {opp_model.cbet_flop:.1%}/{opp_model.cbet_turn:.1%}/{opp_model.cbet_river:.1%} | Overall {opp_model.aggression_frequency:.1%}")
+        
+        # Strategic patterns (show if any are > 5%)
+        strategic_patterns = []
+        if opp_model.double_barrel > 0.05:
+            strategic_patterns.append(f"Double {opp_model.double_barrel:.1%}")
+        if opp_model.float_bet > 0.05:
+            strategic_patterns.append(f"Float {opp_model.float_bet:.1%}")
+        if opp_model.donk_bet_flop > 0.05:
+            strategic_patterns.append(f"Donk {opp_model.donk_bet_flop:.1%}")
+        if opp_model.checkraise_flop > 0.05:
+            strategic_patterns.append(f"C/R {opp_model.checkraise_flop:.1%}")
+        
+        if strategic_patterns:
+            lines.append(f"      🎭 Patterns: {' | '.join(strategic_patterns)}")
+        
+        # Fold tendencies
+        lines.append(f"      🛡️ Defense: Fold vs C-bet {opp_model.fold_to_cbet_flop:.1%}/{opp_model.fold_to_cbet_turn:.1%}/{opp_model.fold_to_cbet_river:.1%}")
+        
+        # Showdown stats (if available)
+        if opp_model.wtsd > 0:
+            lines.append(f"      🏆 Showdown: WTSD {opp_model.wtsd:.1%} | Win Rate {opp_model.showdown_win_rate:.1%}")
+        
+        # Bet sizing info
+        if opp_model.avg_bet_size > 0:
+            lines.append(f"      💰 Sizing: Avg {opp_model.avg_bet_size:.1f} BB | Pot Ratio {opp_model.avg_pot_ratio:.2f}")
+        
+        # Per-street strategic actions (if any show patterns)
+        street_patterns = []
+        if opp_model.three_bet_flop > 0.02 or opp_model.three_bet_turn > 0.02:
+            street_patterns.append(f"3-bet F/T/R: {opp_model.three_bet_flop:.1%}/{opp_model.three_bet_turn:.1%}/{opp_model.three_bet_river:.1%}")
+        if opp_model.donk_bet_flop > 0.02 or opp_model.donk_bet_turn > 0.02:
+            street_patterns.append(f"Donk F/T/R: {opp_model.donk_bet_flop:.1%}/{opp_model.donk_bet_turn:.1%}/{opp_model.donk_bet_river:.1%}")
+        if opp_model.checkraise_flop > 0.02 or opp_model.checkraise_turn > 0.02:
+            street_patterns.append(f"C/R F/T/R: {opp_model.checkraise_flop:.1%}/{opp_model.checkraise_turn:.1%}/{opp_model.checkraise_river:.1%}")
+        
+        if street_patterns:
+            lines.append(f"      🎪 Street Patterns: {' | '.join(street_patterns)}")
+        
+        return '\n'.join(lines)
+    
+    def get_current_street_strategic_actions(self, schema: PokerFeatureSchema) -> str:
+        """
+        Get strategic actions performed on the current street (hero only).
+        Shows: check-raise, donk bet, 3-bet, float bet, probe bet [all monotonic]
+        """
+        seq = schema.hero_current_sequence
+        actions = []
+        
+        # Check each strategic action (they're all boolean/monotonic)
+        if seq.did_check_raise == 1.0:
+            actions.append("Check-raise")
+        if seq.did_donk_bet == 1.0:
+            actions.append("Donk bet")
+        if seq.did_3bet == 1.0:
+            actions.append("3-bet")
+        if seq.did_float_bet == 1.0:
+            actions.append("Float bet")
+        if seq.did_probe_bet == 1.0:
+            actions.append("Probe bet")
+        
+        return ' | '.join(actions) if actions else ""
+    
+    def get_opponent_strategic_actions(self, schema: PokerFeatureSchema) -> str:
+        """
+        Get strategic actions performed by opponent on the current street.
+        Shows: check-raise, donk bet, 3-bet, float bet, probe bet [all monotonic]
+        """
+        opp_seq = schema.opponent_current_sequence
+        actions = []
+        
+        # Check each strategic action (they're all boolean/monotonic)
+        if opp_seq.did_check_raise == 1.0:
+            actions.append("Check-raise")
+        if opp_seq.did_donk_bet == 1.0:
+            actions.append("Donk bet")
+        if opp_seq.did_3bet == 1.0:
+            actions.append("3-bet")
+        if opp_seq.did_float_bet == 1.0:
+            actions.append("Float bet")
+        if opp_seq.did_probe_bet == 1.0:
+            actions.append("Probe bet")
+        
+        return ' | '.join(actions) if actions else ""
     
     def should_log_detailed_features(self, schema: PokerFeatureSchema, action: int, amount: Optional[int]) -> bool:
         """
@@ -317,6 +428,9 @@ def format_features_for_hand_log(schema: PokerFeatureSchema, player_name: str = 
         
         # Add opponent read
         result += f"\n{debugger.format_opponent_read(schema)}"
+        
+        # Add opponent model stats (the key addition!)
+        result += f"\n{debugger.format_opponent_model_stats(schema)}"
         
         return result
     else:
