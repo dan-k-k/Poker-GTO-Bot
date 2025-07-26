@@ -1,4 +1,4 @@
-# analyzers/history_analyzer.py
+# analyzers/street_history_analyzer.py
 # History tracked features with proper HistoryTracker integration
 # Uses ActionSequencer for accurate historical data - no more guessing!
 
@@ -46,6 +46,11 @@ class HistoryAnalyzer:
         
         # Combine all data and save to HistoryTracker
         final_snapshot = {**sequence_data, **stack_data, **additional_data}
+        
+        # --- THE FIX: Add raw action log for deep pattern analysis ---
+        final_snapshot['raw_action_log'] = action_log
+        # --- END THE FIX ---
+        
         dynamic_ctx.history_tracker.save_snapshot(hand_key, street, final_snapshot)
     
     def calculate_sequence_history(self, seat_id: int, static_ctx: StaticContext, dynamic_ctx: DynamicContext) -> dict:
@@ -352,7 +357,7 @@ class HistoryAnalyzer:
             return 0.0
         
         # Check if player is out of position (dealer in heads-up)
-        dealer_seat = static_ctx.game_state.dealer_seat
+        dealer_seat = static_ctx.game_state.dealer_pos
         is_out_of_position = (seat_id == dealer_seat)
         
         if is_out_of_position:
@@ -369,7 +374,7 @@ class HistoryAnalyzer:
         """
         # Simplified: just check if player is in position and made first bet
         # (More sophisticated detection would require previous street analysis)
-        dealer_seat = static_ctx.game_state.dealer_seat
+        dealer_seat = static_ctx.game_state.dealer_pos
         is_in_position = (seat_id == dealer_seat)
         
         if is_in_position and static_ctx.stage >= 2:  # Turn or river
@@ -385,7 +390,7 @@ class HistoryAnalyzer:
             return 0.0
         
         # Check if player is out of position and made first bet
-        dealer_seat = static_ctx.game_state.dealer_seat
+        dealer_seat = static_ctx.game_state.dealer_pos
         is_out_of_position = (seat_id == dealer_seat)
         
         if not is_out_of_position:

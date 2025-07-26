@@ -139,7 +139,7 @@ class CurrentStreetAnalyzer:
         did_check_raise = self._detect_check_raise(player_actions_this_street)
         did_donk_bet = self._detect_donk_bet(seat_id, action_sequence, static_ctx, dynamic_ctx)
         did_3bet = self._detect_3bet(seat_id, action_sequence)
-        did_float_bet = self._detect_float_bet(seat_id, static_ctx, dynamic_ctx)
+        did_float_bet = self._detect_float_bet(seat_id, action_sequencer, static_ctx, dynamic_ctx)
         did_probe_bet = self._detect_probe_bet(seat_id, action_sequence, static_ctx, dynamic_ctx)
         
         # What this seat is currently facing (monotonic)
@@ -787,7 +787,7 @@ class CurrentStreetAnalyzer:
         
         # Check if player is out of position (not dealer in heads-up)
         # In heads-up: dealer is SB and acts first postflop (out of position)
-        dealer_seat = static_ctx.game_state.dealer_seat
+        dealer_seat = static_ctx.game_state.dealer_pos
         is_out_of_position = (seat_id == dealer_seat)
         
         if not is_out_of_position:
@@ -817,7 +817,7 @@ class CurrentStreetAnalyzer:
         
         return 0.0
     
-    def _detect_float_bet(self, seat_id: int, static_ctx: StaticContext, 
+    def _detect_float_bet(self, seat_id: int, action_sequencer, static_ctx: StaticContext, 
                          dynamic_ctx: DynamicContext) -> float:
         """
         Detect if player made a float bet.
@@ -832,44 +832,56 @@ class CurrentStreetAnalyzer:
             return 0.0
         
         # Check if player is in position (dealer in heads-up)
-        dealer_seat = static_ctx.game_state.dealer_seat
+        dealer_seat = static_ctx.game_state.dealer_pos
         is_in_position = (seat_id == dealer_seat)
         
         if not is_in_position:
             return 0.0
         
-        # Get previous street history
-        previous_street_history = dynamic_ctx.history_tracker.get_street_history(current_stage - 1)
-        if not previous_street_history:
+        """
+        Detects a float bet:
+        1. Occurs on the Turn or River.
+        2. Player is In Position.
+        3. Player CALLED a BET on the previous street.
+        4. Player BETS first on the current street after opponent checks.
+        """
+        if current_stage not in [2, 3]:  # Must be Turn or River
             return 0.0
-        
-        # Check if player called on previous street
-        player_called_previous = False
-        opponent_bet_previous = False
-        
-        for action in previous_street_history:
-            if action.get('seat_id') == seat_id and action.get('action') == 'call':
-                player_called_previous = True
-            elif action.get('seat_id') != seat_id and action.get('action') in ['bet', 'raise']:
-                opponent_bet_previous = True
-        
-        if not (player_called_previous and opponent_bet_previous):
+
+        # Condition 2: Player must be in position (Button in HU)
+        if seat_id != dealer_seat:
             return 0.0
-        
-        # Check if opponent checked this street and player bet
-        current_street_actions = dynamic_ctx.history_tracker.get_current_street_actions()
-        opponent_checked = False
-        player_bet = False
-        
-        for action in current_street_actions:
-            if action.get('seat_id') != seat_id and action.get('action') == 'check':
-                opponent_checked = True
-            elif action.get('seat_id') == seat_id and action.get('action') in ['bet', 'raise']:
-                player_bet = True
-        
-        if opponent_checked and player_bet:
+            
+        # --- THE FIX: Get previous street's RAW action log from HistoryTracker ---
+        hand_key = f"hand_{dynamic_ctx.history_tracker.get_hand_number()}"
+        prev_street_name = 'flop' if current_stage == 2 else 'turn'
+        prev_street_snapshot = dynamic_ctx.history_tracker.get_snapshot(hand_key, prev_street_name)
+        prev_street_log = prev_street_snapshot.get('raw_action_log', [])
+        # --- END THE FIX ---
+
+        if not prev_street_log:
+            return 0.0
+
+        # Condition 3: Player must have called a bet on the previous street
+        player_called_vs_bet = False
+        for s_id, act_type, amt in prev_street_log:
+            if s_id == seat_id and act_type == 'call' and amt > 0:
+                player_called_vs_bet = True
+                break
+        if not player_called_vs_bet:
+            return 0.0
+
+        # Condition 4: Opponent must check first and Player must bet first on current street
+        current_actions = action_sequencer.get_live_action_sequence()
+        if not current_actions:
+            return 0.0
+            
+        opponent_checked_first = current_actions[0][0] != seat_id and current_actions[0][1] == 'check'
+        player_bet_this_street = any(s_id == seat_id and act_type == 'bet' for s_id, act_type, amt in current_actions)
+
+        if opponent_checked_first and player_bet_this_street:
             return 1.0
-        
+
         return 0.0
     
     def _detect_probe_bet(self, seat_id: int, action_sequence: list,
@@ -886,7 +898,7 @@ class CurrentStreetAnalyzer:
             return 0.0
         
         # Check if player is out of position
-        dealer_seat = static_ctx.game_state.dealer_seat
+        dealer_seat = static_ctx.game_state.dealer_pos
         is_out_of_position = (seat_id == dealer_seat)
         
         if not is_out_of_position:

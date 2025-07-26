@@ -1,4 +1,4 @@
-# analyzers/history_tracking.py
+# analyzers/street_history_tracking.py
 # for history analyzer
 # Flexible generic historical state tracking for any feature
 # Decoupled from specific feature logic - stores any key-value data
@@ -26,7 +26,7 @@ class HistoryTracker:
     def __init__(self):
         # === CORE GENERIC STORAGE ===
         # Flexible storage: Dict[hand_key, Dict[street, Dict[feature_name, value]]]
-        self.snapshots: Dict[str, Dict[str, Dict[str, float]]] = {}
+        self.snapshots: Dict[str, Dict[str, Dict[str, Any]]] = {}
         
         # === BACKWARD COMPATIBILITY ===
         # Keep some existing functionality for gradual migration
@@ -57,7 +57,7 @@ class HistoryTracker:
         # Cleanup old data to prevent memory bloat
         self._cleanup_old_data()
     
-    def save_snapshot(self, hand_key: str, street: str, data_dict: Dict[str, float]) -> None:
+    def save_snapshot(self, hand_key: str, street: str, data_dict: Dict[str, Any]) -> None:
         """
         Save a snapshot of any feature data for a specific hand and street.
         
@@ -98,7 +98,7 @@ class HistoryTracker:
             for hand_key in hands_to_remove:
                 del self.snapshots[hand_key]
     
-    def get_snapshot(self, hand_key: str, street: str) -> Dict[str, float]:
+    def get_snapshot(self, hand_key: str, street: str) -> Dict[str, Any]:
         """
         Retrieve a snapshot of feature data for a specific hand and street.
         
@@ -160,7 +160,7 @@ class HistoryTracker:
         """
         return list(self.snapshots.get(hand_key, {}).keys())
     
-    def get_latest_snapshot(self, hand_key: str) -> Dict[str, float]:
+    def get_latest_snapshot(self, hand_key: str) -> Dict[str, Any]:
         """
         Get the most recent snapshot for a hand (latest street).
         

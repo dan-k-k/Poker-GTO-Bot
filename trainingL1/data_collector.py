@@ -857,75 +857,9 @@ class DataCollector:
                 
                 # Record raw action for later analysis by HandEventIdentifier
                 if self.stats_tracker:
-                    pot_size = state.get('pot', 0)
-                    stage = state.get('stage', 0)
-                    was_facing_bet = len(set(state.get('current_bets', []))) > 1
-                    
-                    # Track events for this player this hand
-                    if current_player not in hand_events:
-                        hand_events[current_player] = {}
-                    
-                    # Identify specific opportunities based on action and context
-                    if stage == 0:  # Pre-flop
-                        # VPIP opportunity: Any action that puts money in voluntarily
-                        if action in [1, 2] and amount and amount > 0:
-                            hand_events[current_player]['vpip_opportunity'] = True
-                            hand_events[current_player]['vpip_action'] = True
-                        elif action == 0:  # Folded when could have called/raised
-                            hand_events[current_player]['vpip_opportunity'] = True
-                            hand_events[current_player]['vpip_action'] = False
-                        
-                        # PFR opportunity: When player can raise
-                        if action == 2:  # Raised
-                            hand_events[current_player]['pfr_opportunity'] = True
-                            hand_events[current_player]['pfr_action'] = True
-                        elif action in [0, 1]:  # Could have raised but didn't
-                            hand_events[current_player]['pfr_opportunity'] = True
-                            hand_events[current_player]['pfr_action'] = False
-                    
-                    else:  # Post-flop (stage 1=flop, 2=turn, 3=river)
-                        # C-bet opportunity: Was aggressor on previous street
-                        if stage == 1 and preflop_aggressor == current_player:
-                            hand_events[current_player]['cbet_flop_opportunity'] = True
-                            hand_events[current_player]['cbet_flop_action'] = (action == 2)
-                        elif stage == 2 and flop_aggressor == current_player:
-                            hand_events[current_player]['cbet_turn_opportunity'] = True
-                            hand_events[current_player]['cbet_turn_action'] = (action == 2)
-                        elif stage == 3 and turn_aggressor == current_player:
-                            hand_events[current_player]['cbet_river_opportunity'] = True
-                            hand_events[current_player]['cbet_river_action'] = (action == 2)
-                        
-                        # Fold to C-bet opportunity: Facing a bet
-                        if was_facing_bet:
-                            if stage == 1:
-                                hand_events[current_player]['fold_to_cbet_flop_opportunity'] = True
-                                hand_events[current_player]['fold_to_cbet_flop_action'] = (action == 0)
-                            elif stage == 2:
-                                hand_events[current_player]['fold_to_cbet_turn_opportunity'] = True
-                                hand_events[current_player]['fold_to_cbet_turn_action'] = (action == 0)
-                            elif stage == 3:
-                                hand_events[current_player]['fold_to_cbet_river_opportunity'] = True
-                                hand_events[current_player]['fold_to_cbet_river_action'] = (action == 0)
-                    
-                    # Track aggressors for next street's C-bet opportunities
-                    if action == 2:  # Bet/raise
-                        if stage == 0:
-                            preflop_aggressor = current_player
-                        elif stage == 1:
-                            flop_aggressor = current_player
-                        elif stage == 2:
-                            turn_aggressor = current_player
-                    
-                    # Store bet sizes and pot ratios for this action
-                    if action == 2 and amount and amount > 0:
-                        if 'bet_sizes' not in hand_events[current_player]:
-                            hand_events[current_player]['bet_sizes'] = []
-                        hand_events[current_player]['bet_sizes'].append(amount)
-                        
-                        if pot_size > 0:
-                            if 'pot_ratios' not in hand_events[current_player]:
-                                hand_events[current_player]['pot_ratios'] = []
-                            hand_events[current_player]['pot_ratios'].append(amount / pot_size)
+                    self._record_raw_action(current_player, action, amount or 0, state)
+                    # Update community cards tracking
+                    self._update_community_cards(state)
                 
                 total_actions += 1
                 
