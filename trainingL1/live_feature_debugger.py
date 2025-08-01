@@ -143,7 +143,7 @@ class LiveFeatureDebugger:
         hole_cards = self.extract_cards_from_one_hot(schema, "hole")
         made_hand = self.get_made_hand_string(schema)
         hand_strength = schema.current_additional.hand_strength
-        equity_vs_range = schema.current_additional.equity_vs_range
+        equity_vs_range = schema.current_strategic.equity_vs_range if hasattr(schema.current_strategic, 'equity_vs_range') else 0.0
         
         # Stack and pot info
         stack = schema.self_current_stack
@@ -178,13 +178,15 @@ class LiveFeatureDebugger:
         
         # Strength metrics
         hand_strength = schema.current_additional.hand_strength
-        equity_vs_range = schema.current_additional.equity_vs_range
+        equity_vs_range = schema.current_strategic.equity_vs_range if hasattr(schema.current_strategic, 'equity_vs_range') else 0.0
         lines.append(f"    📊 Strength: {hand_strength:.1%} (raw) | {equity_vs_range:.1%} (vs range)")
         
         # Delta features (if applicable)
-        deltas = schema.current_additional
-        if deltas.equity_delta != 0 or deltas.spr_delta != 0 or deltas.pot_size_delta != 0:
-            lines.append(f"    📈 Deltas: Equity {deltas.equity_delta:+.1%} | SPR {deltas.spr_delta:+.2f} | Pot {deltas.pot_size_delta:+.1f}BB")
+        additional_deltas = schema.current_additional
+        strategic_deltas = schema.current_strategic
+        equity_delta = strategic_deltas.equity_delta if hasattr(strategic_deltas, 'equity_delta') else 0.0
+        if equity_delta != 0 or additional_deltas.spr_delta != 0 or additional_deltas.pot_size_delta != 0:
+            lines.append(f"    📈 Deltas: Equity {equity_delta:+.1%} | SPR {additional_deltas.spr_delta:+.2f} | Pot {additional_deltas.pot_size_delta:+.1f}BB")
         
         # Stack and pot dynamics
         stack = schema.self_current_stack
@@ -225,7 +227,9 @@ class LiveFeatureDebugger:
         deltas = schema.current_additional
         
         # Check if any deltas are significant
-        significant_equity = abs(deltas.equity_delta) > 0.05  # 5% change
+        strategic_deltas = schema.current_strategic
+        equity_delta = strategic_deltas.equity_delta if hasattr(strategic_deltas, 'equity_delta') else 0.0
+        significant_equity = abs(equity_delta) > 0.05  # 5% change
         significant_spr = abs(deltas.spr_delta) > 0.5  # 0.5 SPR change
         significant_pot = abs(deltas.pot_size_delta) > 1.0  # 1BB change
         
@@ -235,8 +239,8 @@ class LiveFeatureDebugger:
         lines = ["    💫 SIGNIFICANT CHANGES FROM LAST STREET:"]
         
         if significant_equity:
-            direction = "improved" if deltas.equity_delta > 0 else "worsened"
-            lines.append(f"       Equity {direction} by {abs(deltas.equity_delta):.1%}")
+            direction = "improved" if equity_delta > 0 else "worsened"
+            lines.append(f"       Equity {direction} by {abs(equity_delta):.1%}")
         
         if significant_spr:
             direction = "increased" if deltas.spr_delta > 0 else "decreased"
@@ -517,7 +521,7 @@ class LiveFeatureDebugger:
             parts.append(f"LowSPR-{spr:.1f}")
         
         # Add equity if close
-        equity = schema.current_additional.equity_vs_range
+        equity = schema.current_strategic.equity_vs_range if hasattr(schema.current_strategic, 'equity_vs_range') else 0.0
         if 0.4 <= equity <= 0.6:
             parts.append(f"CloseEquity-{equity:.1%}")
         

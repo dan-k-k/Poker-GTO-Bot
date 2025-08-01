@@ -17,7 +17,7 @@ from poker_agents import GTOPokerNet
 # Import training sub-modules
 try:
     # Relative imports for package usage
-    from .data_collector import DataCollector
+    from ._OLD_data_collector import DataCollector
     from .training_utils import TrainingUtils, TrainingWatchdog
     from .action_selector import ActionSelector
     from .network_trainer import NetworkTrainer
@@ -26,7 +26,7 @@ try:
     from stats_tracker import StatsTracker
 except ImportError:
     # Direct imports for script execution
-    from data_collector import DataCollector
+    from Poker.trainingL1._OLD_data_collector import DataCollector
     from training_utils import TrainingUtils, TrainingWatchdog
     from action_selector import ActionSelector
     from network_trainer import NetworkTrainer

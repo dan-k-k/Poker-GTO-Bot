@@ -16,7 +16,7 @@ from poker_core import HandEvaluator
 # Add trainingL1 to path for equity calculator imports
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'trainingL1'))
 try:
-    from trainingL1.equity_calculator import EquityCalculator, RangeConstructor
+    from Poker.trainingL1._OLD_equity_calculator import EquityCalculator, RangeConstructor
 except ImportError:
     try:
         from equity_calculator import EquityCalculator, RangeConstructor
@@ -413,7 +413,6 @@ class CurrentStreetAnalyzer:
         )
         
         # Delta features (change from previous street)
-        equity_delta = self._calculate_equity_delta(static_ctx, dynamic_ctx, equity_vs_range)
         spr_delta = self._calculate_spr_delta(static_ctx, dynamic_ctx, effective_spr)
         pot_size_delta = self._calculate_pot_size_delta(static_ctx, dynamic_ctx, pot)
         
@@ -457,7 +456,6 @@ class CurrentStreetAnalyzer:
             "implied_odds": implied_odds,
             "hand_strength": hand_strength,
             "equity_vs_range": equity_vs_range,
-            "equity_delta": equity_delta,
             "spr_delta": spr_delta,
             "pot_size_delta": pot_size_delta,
             "is_facing_check": is_facing_check,
@@ -582,28 +580,6 @@ class CurrentStreetAnalyzer:
         
         return ranks[rank_id] + suits[suit_id]
     
-    def _calculate_equity_delta(self, static_ctx: StaticContext, dynamic_ctx: DynamicContext, current_equity: float) -> float:
-        """Calculate change in equity from previous street."""
-        current_stage = static_ctx.stage
-        
-        # No delta for pre-flop
-        if current_stage == 0:
-            return 0.0
-        
-        # Get previous street name
-        previous_streets = {1: 'preflop', 2: 'flop', 3: 'turn'}
-        previous_street = previous_streets.get(current_stage)
-        
-        if not previous_street:
-            return 0.0
-        
-        # Look up previous equity from history
-        hand_key = f"hand_{dynamic_ctx.history_tracker.get_hand_number()}"
-        previous_equity = dynamic_ctx.history_tracker.get_feature_value(
-            hand_key, previous_street, "equity_vs_range", current_equity
-        )
-        
-        return current_equity - previous_equity
     
     def _calculate_spr_delta(self, static_ctx: StaticContext, dynamic_ctx: DynamicContext, current_spr: float) -> float:
         """Calculate change in SPR from previous street."""

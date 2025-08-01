@@ -23,14 +23,14 @@ class ActionSelector:
         """Set the current episode for exploration noise calculation."""
         self.current_episode = episode
     
-    def _get_average_strategy_action(self, features, state) -> Tuple[int, Optional[int]]:
-        """Get action from average strategy network (GTO approximation)."""
-        self.avg_pytorch_net.eval()  # Set to eval mode for inference
+    def _get_network_action(self, network, features, state, bet_config) -> Tuple[int, Optional[int]]:
+        """Generic method to get action from any network with specified bet sizing config."""
+        network.eval()  # Set to eval mode for inference
         with torch.no_grad():
             features_tensor = torch.FloatTensor(features).unsqueeze(0)
-            predictions = self.avg_pytorch_net(features_tensor)
+            predictions = network(features_tensor)
             action_probs = predictions['action_probs'][0].numpy()
-        self.avg_pytorch_net.train()  # Reset to training mode
+        network.train()  # Reset to training mode
         
         legal_actions = state['legal_actions']
         
@@ -63,8 +63,8 @@ class ActionSelector:
         # Handle bet sizing and call amount
         amount = None
         if action == 2 and 2 in legal_actions:
-            sizing_output = predictions['bet_sizing'][0].numpy()  # Single continuous value
-            amount = self._determine_gto_bet_size(state, sizing_output, state['to_move'])
+            sizing_output = predictions['bet_sizing'][0].numpy()
+            amount = self._determine_bet_size(state, sizing_output, state['to_move'], bet_config)
         elif action == 1:
             # If action is a call, determine the amount needed to call
             current_max_bet = max(state['current_bets'])
@@ -74,159 +74,84 @@ class ActionSelector:
                 amount = amount_to_call
         
         return action, amount
+    
+    def _determine_bet_size(self, state, sizing_output, player_id, config) -> int:
+        """Generic bet size determination using configuration parameters."""
+        min_raise = self.env._min_raise_amount(player_id)
+        max_bet = state['stacks'][player_id]
+        pot = state['pot']
+        
+        # Handle edge cases
+        if min_raise is None or min_raise > max_bet:
+            return max_bet  # All-in
+        if max_bet <= 0:
+            return 0
+        
+        # Extract and process bet fraction
+        bet_fraction = float(sizing_output[0])
+        
+        # Add exploration noise during training
+        if self.current_episode < 500:
+            noise_strength = config['noise_strength'] * (1.0 - self.current_episode / 500)
+            bet_fraction += random.uniform(-noise_strength, noise_strength)
+        
+        # Clamp to configuration range
+        bet_fraction = max(config['min_clamp'], min(config['max_clamp'], bet_fraction))
+        
+        # Map to betting range
+        overbet_size = min(int(pot * config['overbet_mult']), max_bet)
+        bet_range = overbet_size - min_raise
+        
+        if bet_range > 0:
+            # Normalize bet_fraction to [0, 1] for interpolation
+            normalized_fraction = (bet_fraction - config['min_clamp']) / (config['max_clamp'] - config['min_clamp'])
+            continuous_size = min_raise + (normalized_fraction * bet_range)
+            final_size = int(continuous_size)
+        else:
+            final_size = min_raise
+        
+        # Final enforcement of legal bet amount
+        return max(min_raise, min(final_size, max_bet))
+    
+    def _get_average_strategy_action(self, features, state) -> Tuple[int, Optional[int]]:
+        """Get action from average strategy network (GTO approximation)."""
+        bet_config = {
+            'noise_strength': 0.1,
+            'min_clamp': 0.1,
+            'max_clamp': 2.0,
+            'overbet_mult': 2.0
+        }
+        return self._get_network_action(self.avg_pytorch_net, features, state, bet_config)
     
     def _get_best_response_action(self, features, state) -> Tuple[int, Optional[int]]:
         """Get action from best response network (exploiter)."""
-        self.br_pytorch_net.eval()  # Set to eval mode for inference
-        with torch.no_grad():
-            features_tensor = torch.FloatTensor(features).unsqueeze(0)
-            predictions = self.br_pytorch_net(features_tensor)
-            action_probs = predictions['action_probs'][0].numpy()
-        self.br_pytorch_net.train()  # Reset to training mode
-        
-        legal_actions = state['legal_actions']
-        
-        # Handle edge case of no legal actions
-        if not legal_actions:
-            return 1, None  # Default to check/call
-        
-        # More aggressive/exploitative action selection
-        filtered_probs = np.zeros(3)
-        for action in legal_actions:
-            filtered_probs[action] = action_probs[action]
-        
-        # Let the neural network learn optimal bias naturally
-        # Removed hard-coded bias that interferes with training
-        
-        if np.sum(filtered_probs) > 0:
-            filtered_probs /= np.sum(filtered_probs)
-        else:
-            filtered_probs = np.zeros(3)
-            for action in legal_actions:
-                filtered_probs[action] = 1.0 / len(legal_actions)
-        
-        # Final safety check
-        prob_sum = np.sum(filtered_probs)
-        if not np.isclose(prob_sum, 1.0, atol=1e-6):
-            filtered_probs = np.zeros(3)
-            for action in legal_actions:
-                filtered_probs[action] = 1.0 / len(legal_actions)
-        
-        action = np.random.choice(3, p=filtered_probs)
-        
-        # Handle bet sizing and call amount
-        amount = None
-        if action == 2 and 2 in legal_actions:
-            sizing_output = predictions['bet_sizing'][0].numpy()  # Single continuous value
-            amount = self._determine_exploitative_bet_size(state, sizing_output, state['to_move'])
-        elif action == 1:
-            # If action is a call, determine the amount needed to call
-            current_max_bet = max(state['current_bets'])
-            player_bet = state['current_bets'][state['to_move']]
-            amount_to_call = current_max_bet - player_bet
-            if amount_to_call > 0:
-                amount = amount_to_call
-        
-        return action, amount
+        bet_config = {
+            'noise_strength': 0.15,
+            'min_clamp': 0.05,
+            'max_clamp': 2.2,
+            'overbet_mult': 2.2
+        }
+        return self._get_network_action(self.br_pytorch_net, features, state, bet_config)
     
     def _determine_gto_bet_size(self, state, sizing_output, player_id) -> int:
-        """Determine GTO-focused bet size using continuous output (returns additional chips to add)."""
-        min_raise = self.env._min_raise_amount(player_id)  # Additional chips needed
-        max_bet = state['stacks'][player_id]  # Total chips available
-        pot = state['pot']
-        
-        # Handle edge cases
-        if min_raise is None:
-            return max_bet  # All-in
-        if min_raise > max_bet:
-            return max_bet  # All-in
-        if max_bet <= 0:
-            return 0
-        
-        # CRITICAL FIX: Ensure we never return less than min_raise
-        # This is the most direct fix to prevent illegal bet amounts
-        
-        # Continuous bet sizing: network outputs value between 0 and 1
-        bet_fraction = float(sizing_output[0])  # Extract scalar from array
-        
-        # Add small amount of exploration noise during training
-        if self.current_episode < 500:
-            noise_strength = 0.1 * (1.0 - self.current_episode / 500)  # Decreasing noise
-            bet_fraction += random.uniform(-noise_strength, noise_strength)
-        
-        # Clamp bet_fraction to reasonable range (prevent extreme values during early training)
-        bet_fraction = max(0.1, min(2, bet_fraction))  # Keep between 10% and 90%
-        
-        # Map to reasonable betting range for GTO play with overbet capability
-        # 0.1 -> min_raise (minimum legal bet)  
-        # 1.0 -> pot-sized bet
-        # 2 -> 2x pot overbet (or all-in if smaller)
-        overbet_size = min(int(pot * 2), max_bet)  # Allow up to 2x pot
-        bet_range = overbet_size - min_raise
-        
-        if bet_range > 0:
-            # Linear interpolation: 0.1 maps to min_raise, 2 maps to 2x pot
-            # Normalize bet_fraction to [0, 1] range for interpolation
-            normalized_fraction = (bet_fraction - 0.1) / (2 - 0.1)  # Map [0.1, 2] to [0, 1]
-            continuous_size = min_raise + (normalized_fraction * bet_range)
-            final_size = int(continuous_size)
-        else:
-            # If no range available, just use min_raise
-            final_size = min_raise
-        
-        # FINAL ENFORCEMENT: Guarantee legal bet amount
-        final_size = max(min_raise, min(final_size, max_bet))
-        
-        return final_size
+        """Determine GTO-focused bet size - legacy method for compatibility."""
+        config = {
+            'noise_strength': 0.1,
+            'min_clamp': 0.1,
+            'max_clamp': 2.0,
+            'overbet_mult': 2.0
+        }
+        return self._determine_bet_size(state, sizing_output, player_id, config)
     
     def _determine_exploitative_bet_size(self, state, sizing_output, player_id) -> int:
-        """Determine exploitative bet size using continuous output (returns additional chips to add)."""
-        min_raise = self.env._min_raise_amount(player_id)  # Additional chips needed
-        max_bet = state['stacks'][player_id]  # Total chips available
-        pot = state['pot']
-        
-        # Handle edge cases
-        if min_raise is None:
-            return max_bet  # All-in
-        if min_raise > max_bet:
-            return max_bet  # All-in
-        if max_bet <= 0:
-            return 0
-        
-        # CRITICAL FIX: Ensure we never return less than min_raise
-        # This is the most direct fix to prevent illegal bet amounts
-        
-        # Continuous bet sizing for exploitation: more aggressive range
-        bet_fraction = float(sizing_output[0])  # Extract scalar from array
-        
-        # Add exploration noise for best response (more aggressive exploration)
-        if self.current_episode < 500:
-            noise_strength = 0.15 * (1.0 - self.current_episode / 500)  # More noise for exploitation
-            bet_fraction += random.uniform(-noise_strength, noise_strength)
-        
-        # Clamp bet_fraction to reasonable range (prevent extreme values during early training)
-        bet_fraction = max(0.05, min(2.2, bet_fraction))  # Even wider range for exploitation
-        
-        # Map to wider betting range for exploitation (can overbet more than GTO)
-        # 0.05 -> 5% pot for blockers/continuation
-        # 2.2 -> 2.2x pot bet (or all-in if smaller) for maximum aggression
-        overbet_size = min(int(pot * 2.2), max_bet)  # Exploiter can be more aggressive than GTO
-        bet_range = overbet_size - min_raise
-        
-        if bet_range > 0:
-            # Linear interpolation: 0.05 maps to min_raise, 2.2 maps to 2.2x pot
-            # Normalize bet_fraction to [0, 1] range for interpolation
-            normalized_fraction = (bet_fraction - 0.05) / (2.2 - 0.05)  # Map [0.05, 2.2] to [0, 1]
-            continuous_size = min_raise + (normalized_fraction * bet_range)
-            final_size = int(continuous_size)
-        else:
-            # If no range available, just use min_raise
-            final_size = min_raise
-        
-        # FINAL ENFORCEMENT: Guarantee legal bet amount
-        final_size = max(min_raise, min(final_size, max_bet))
-        
-        return final_size
+        """Determine exploitative bet size - legacy method for compatibility."""
+        config = {
+            'noise_strength': 0.15,
+            'min_clamp': 0.05,
+            'max_clamp': 2.2,
+            'overbet_mult': 2.2
+        }
+        return self._determine_bet_size(state, sizing_output, player_id, config)
     
     def _get_tight_aggressive_action(self, features, state) -> Tuple[int, Optional[int]]:
         """Simple tight-aggressive strategy for exploitability testing."""

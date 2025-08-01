@@ -2,7 +2,7 @@
 # Training module for Neural Fictitious Self-Play (NFSP) GTO training
 
 from .train_L1 import NFSPTrainer
-from .data_collector import DataCollector
+from ._OLD_data_collector import DataCollector
 from .training_utils import TrainingUtils
 from .action_selector import ActionSelector
 from .network_trainer import NetworkTrainer

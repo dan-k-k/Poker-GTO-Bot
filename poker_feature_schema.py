@@ -228,12 +228,13 @@ class CurrentStreetSequenceFeatures:
     overbet_count: float = 0.0                      # Seat id overbet (>100% of pot raise/bet) x times
     largebet_count: float = 0.0                     # Seat id largebet (>70% of pot raise/bet) x times
     smallbet_count: float = 0.0                     # Seat id smallbet (<=33% of pot raise/bet) x times
-    # Strategic features
+
     did_check_raise: float = 0.0                    # Seat id check-raised on this street
     did_donk_bet: float = 0.0                       # Seat id made donk bet (bet OOP, not prev street aggressor)
     did_3bet: float = 0.0                           # Seat id made 3-bet this street
     did_float_bet: float = 0.0                      # Seat id made float bet (called prev street IP, bet when checked to)
     did_probe_bet: float = 0.0                      # Seat id made probe bet (bet OOP after PF aggressor checked back)
+    
     did_cbet: float = 0.0                           # Seat id continued aggression from previous street (unified c-bet)
     did_go_all_in: float = 0.0                      # Seat id went all-in on this street
     did_open_overbet: float = 0.0                   # Seat id made opening overbet (first aggressive action >100% pot)
@@ -297,10 +298,9 @@ class CurrentAdditionalFeatures:
     # From CurrentStreetAnalyzer.calculate_current_street_additional()
     effective_spr: float = 0.0                                              # Effective stack to pot ratio (min(stacks) / pot)    
     # Hand strength features (moved here for history tracking)
-    hand_strength: float = 0.0                                              # MC sims vs random hands
+    hand_strength: float = field(default=0.0, metadata={'private': True})   # MC sims vs random hands
     # add the pot size ratio here?* later.
     # Delta features (change from previous street)
-    equity_delta: float = field(default=0.0, metadata={'leaky': True})      # Change in equity_vs_range from previous street
     spr_delta: float = 0.0                                                  # Change in effective SPR from previous street
     pot_size_delta: float = 0.0                                             # Change in pot size from previous street
     
@@ -327,6 +327,8 @@ class CurrentStrategicFeatures:
     range_vs_range: float = field(default=0.0, metadata={'leaky': True})
     future_payoff: float = field(default=0.0, metadata={'leaky': True})
     playability: float = field(default=0.0, metadata={'leaky': True})
+    # Delta features (change from previous street)
+    equity_delta: float = field(default=0.0, metadata={'leaky': True})      # Change in equity_vs_range from previous street
     
     def to_list(self) -> List[float]:
         return [getattr(self, f.name) for f in fields(self)]
@@ -450,7 +452,8 @@ class StackHistoryFeatures:
     preflop_current_street_commitment_vs_starting_stack: float = 0.0  # Seat id amount committed this street / seat id starting stack this street
     preflop_total_commitment_pct: float = 0.0        # Seat id total commitment (across all streets so far: % of stack committed)
     preflop_total_commitment_bb: float = 0.0         # Seat id total commitment (across all streets so far: in BB)
-    
+    preflop_stack_smaller_than_pot: float = 0.0
+
     # Flop features
     flop_stack_in_bb: float = 0.0
     flop_pot_size_ratio: float = 0.0
@@ -462,6 +465,7 @@ class StackHistoryFeatures:
     flop_current_street_commitment_vs_starting_stack: float = 0.0
     flop_total_commitment_pct: float = 0.0
     flop_total_commitment_bb: float = 0.0
+    flop_stack_smaller_than_pot: float = 0.0
     
     # Turn features
     turn_stack_in_bb: float = 0.0
@@ -474,7 +478,8 @@ class StackHistoryFeatures:
     turn_current_street_commitment_vs_starting_stack: float = 0.0
     turn_total_commitment_pct: float = 0.0
     turn_total_commitment_bb: float = 0.0
-    
+    turn_stack_smaller_than_pot: float = 0.0
+
     # River features
     river_stack_in_bb: float = 0.0
     river_pot_size_ratio: float = 0.0
@@ -486,6 +491,7 @@ class StackHistoryFeatures:
     river_current_street_commitment_vs_starting_stack: float = 0.0
     river_total_commitment_pct: float = 0.0
     river_total_commitment_bb: float = 0.0
+    river_stack_smaller_than_pot: float = 0.0
     
     def to_list(self) -> List[float]:
         return [getattr(self, f.name) for f in fields(self)]
@@ -496,13 +502,13 @@ class AdditionalHistoryFeatures:
     """Additional history features (self only) [HISTORY TRACKED]"""
     # From HistoryAnalyzer.calculate_additional_history() - per street data
     preflop_effective_spr: float = 0.0                                              # Effective stack to pot ratio (min(stacks) / pot)
-    preflop_hand_strength: float = 0.0                                              # MC sims vs random hands
+    preflop_hand_strength: float = field(default=0.0, metadata={'private': True})   # MC sims vs random hands
     flop_effective_spr: float = 0.0
-    flop_hand_strength: float = 0.0
+    flop_hand_strength: float = field(default=0.0, metadata={'private': True})
     turn_effective_spr: float = 0.0
-    turn_hand_strength: float = 0.0
+    turn_hand_strength: float = field(default=0.0, metadata={'private': True})
     river_effective_spr: float = 0.0
-    river_hand_strength: float = 0.0
+    river_hand_strength: float = field(default=0.0, metadata={'private': True})
     
     def to_list(self) -> List[float]:
         return [getattr(self, f.name) for f in fields(self)]
@@ -519,6 +525,7 @@ class StrategicHistoryFeatures:
     preflop_reverse_implied_odds: float = field(default=0.0, metadata={'leaky': True})
     preflop_range_vs_range: float = field(default=0.0, metadata={'leaky': True})
     preflop_future_payoff: float = field(default=0.0, metadata={'leaky': True})
+    preflop_playability: float = field(default=0.0, metadata={'leaky': True})
 
     # Flop Strategic History
     flop_implied_odds: float = field(default=0.0, metadata={'leaky': True})
@@ -529,7 +536,8 @@ class StrategicHistoryFeatures:
     flop_reverse_implied_odds: float = field(default=0.0, metadata={'leaky': True})
     flop_range_vs_range: float = field(default=0.0, metadata={'leaky': True})
     flop_future_payoff: float = field(default=0.0, metadata={'leaky': True})
-    
+    flop_playability: float = field(default=0.0, metadata={'leaky': True})
+
     # Turn Strategic History
     turn_implied_odds: float = field(default=0.0, metadata={'leaky': True})
     turn_equity_vs_range: float = field(default=0.0, metadata={'leaky': True})
@@ -539,6 +547,7 @@ class StrategicHistoryFeatures:
     turn_reverse_implied_odds: float = field(default=0.0, metadata={'leaky': True})
     turn_range_vs_range: float = field(default=0.0, metadata={'leaky': True})
     turn_future_payoff: float = field(default=0.0, metadata={'leaky': True})
+    turn_playability: float = field(default=0.0, metadata={'leaky': True})
 
     # River Strategic History
     river_implied_odds: float = field(default=0.0, metadata={'leaky': True})
@@ -549,6 +558,7 @@ class StrategicHistoryFeatures:
     river_reverse_implied_odds: float = field(default=0.0, metadata={'leaky': True})
     river_range_vs_range: float = field(default=0.0, metadata={'leaky': True})
     river_future_payoff: float = field(default=0.0, metadata={'leaky': True})
+    river_playability: float = field(default=0.0, metadata={'leaky': True})
 
     def to_list(self) -> List[float]:
         return [getattr(self, f.name) for f in fields(self)]

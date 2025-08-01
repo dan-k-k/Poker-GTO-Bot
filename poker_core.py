@@ -438,3 +438,44 @@ def get_betting_order(seat_id: int, dealer_pos: int, num_players: int) -> int:
     relative_position = (seat_id - dealer_pos) % num_players
     return (relative_position - 1 + num_players) % num_players
 
+
+# =============================================================================
+# UTILITY FUNCTIONS
+# =============================================================================
+
+def card_to_string(card_id: int) -> str:
+    """Convert card ID (0-51) to string representation like '2s'."""
+    if card_id < 0 or card_id > 51:
+        return 'As'  # Fallback
+        
+    rank_id = card_id // 4
+    suit_id = card_id % 4
+    
+    ranks = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A']
+    suits = ['c', 'd', 'h', 's']
+    
+    return ranks[rank_id] + suits[suit_id]
+
+
+def string_to_card_id(card_str: str) -> int:
+    """Convert card string like '2s' to card ID (0-51)."""
+    if len(card_str) < 2:
+        return 0
+    rank_char = card_str[0]
+    suit_char = card_str[1]
+    
+    rank_map = {'2': 0, '3': 1, '4': 2, '5': 3, '6': 4, '7': 5, '8': 6, 
+               '9': 7, 'T': 8, 'J': 9, 'Q': 10, 'K': 11, 'A': 12}
+    suit_map = {'c': 0, 'd': 1, 'h': 2, 's': 3}
+    
+    rank = rank_map.get(rank_char, 0)
+    suit = suit_map.get(suit_char, 0)
+    
+    return rank * 4 + suit
+
+
+def get_street_name(stage: int) -> str:
+    """Convert stage number to street name."""
+    stage_map = {0: 'preflop', 1: 'flop', 2: 'turn', 3: 'river'}
+    return stage_map.get(stage, 'preflop')
+
