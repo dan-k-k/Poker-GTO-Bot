@@ -220,7 +220,7 @@ class NetworkTrainer:
             print(f"     ------------------------------------")
             print(f"     Total Loss: {total_loss.item():.4f}")
             print(f"   BR DEBUG (Rewards & Values):")
-            print(f"     Avg Reward       : {avg_reward: .4f} (Profit (0.2): {avg_profit_reward: .4f}, Equity (0.8): {avg_equity_reward: .4f})")
+            print(f"     Avg Reward       : {avg_reward: .4f} (Profit: {avg_profit_reward: .4f}, Equity: {avg_equity_reward: .4f})")
             print(f"     Avg State Value  : {avg_state_value: .4f} (Agent's Prediction)")
             print(f"     Avg Advantage    : {avg_advantage: .4f} (Reward vs. Prediction)")
         

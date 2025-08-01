@@ -99,49 +99,64 @@ class TextureFeatureSet:
 class MyHandFeatures:
     """Everything about my hole cards and their strength (185 features = 67 strength + 59 hole texture + 59 hand texture)."""
     # Hole card one-hot encoding (52 features)
-    hole_0: float = 0.0; hole_1: float = 0.0; hole_2: float = 0.0; hole_3: float = 0.0; hole_4: float = 0.0
-    hole_5: float = 0.0; hole_6: float = 0.0; hole_7: float = 0.0; hole_8: float = 0.0; hole_9: float = 0.0
-    hole_10: float = 0.0; hole_11: float = 0.0; hole_12: float = 0.0; hole_13: float = 0.0; hole_14: float = 0.0
-    hole_15: float = 0.0; hole_16: float = 0.0; hole_17: float = 0.0; hole_18: float = 0.0; hole_19: float = 0.0
-    hole_20: float = 0.0; hole_21: float = 0.0; hole_22: float = 0.0; hole_23: float = 0.0; hole_24: float = 0.0
-    hole_25: float = 0.0; hole_26: float = 0.0; hole_27: float = 0.0; hole_28: float = 0.0; hole_29: float = 0.0
-    hole_30: float = 0.0; hole_31: float = 0.0; hole_32: float = 0.0; hole_33: float = 0.0; hole_34: float = 0.0
-    hole_35: float = 0.0; hole_36: float = 0.0; hole_37: float = 0.0; hole_38: float = 0.0; hole_39: float = 0.0
-    hole_40: float = 0.0; hole_41: float = 0.0; hole_42: float = 0.0; hole_43: float = 0.0; hole_44: float = 0.0
-    hole_45: float = 0.0; hole_46: float = 0.0; hole_47: float = 0.0; hole_48: float = 0.0; hole_49: float = 0.0
-    hole_50: float = 0.0; hole_51: float = 0.0
+    hole_0: float = field(default=0.0, metadata={'private': True}); hole_1: float = field(default=0.0, metadata={'private': True})
+    hole_2: float = field(default=0.0, metadata={'private': True}); hole_3: float = field(default=0.0, metadata={'private': True})
+    hole_4: float = field(default=0.0, metadata={'private': True}); hole_5: float = field(default=0.0, metadata={'private': True})
+    hole_6: float = field(default=0.0, metadata={'private': True}); hole_7: float = field(default=0.0, metadata={'private': True})
+    hole_8: float = field(default=0.0, metadata={'private': True}); hole_9: float = field(default=0.0, metadata={'private': True})
+    hole_10: float = field(default=0.0, metadata={'private': True}); hole_11: float = field(default=0.0, metadata={'private': True})
+    hole_12: float = field(default=0.0, metadata={'private': True}); hole_13: float = field(default=0.0, metadata={'private': True})
+    hole_14: float = field(default=0.0, metadata={'private': True}); hole_15: float = field(default=0.0, metadata={'private': True})
+    hole_16: float = field(default=0.0, metadata={'private': True}); hole_17: float = field(default=0.0, metadata={'private': True})
+    hole_18: float = field(default=0.0, metadata={'private': True}); hole_19: float = field(default=0.0, metadata={'private': True})
+    hole_20: float = field(default=0.0, metadata={'private': True}); hole_21: float = field(default=0.0, metadata={'private': True})
+    hole_22: float = field(default=0.0, metadata={'private': True}); hole_23: float = field(default=0.0, metadata={'private': True})
+    hole_24: float = field(default=0.0, metadata={'private': True}); hole_25: float = field(default=0.0, metadata={'private': True})
+    hole_26: float = field(default=0.0, metadata={'private': True}); hole_27: float = field(default=0.0, metadata={'private': True})
+    hole_28: float = field(default=0.0, metadata={'private': True}); hole_29: float = field(default=0.0, metadata={'private': True})
+    hole_30: float = field(default=0.0, metadata={'private': True}); hole_31: float = field(default=0.0, metadata={'private': True})
+    hole_32: float = field(default=0.0, metadata={'private': True}); hole_33: float = field(default=0.0, metadata={'private': True})
+    hole_34: float = field(default=0.0, metadata={'private': True}); hole_35: float = field(default=0.0, metadata={'private': True})
+    hole_36: float = field(default=0.0, metadata={'private': True}); hole_37: float = field(default=0.0, metadata={'private': True})
+    hole_38: float = field(default=0.0, metadata={'private': True}); hole_39: float = field(default=0.0, metadata={'private': True})
+    hole_40: float = field(default=0.0, metadata={'private': True}); hole_41: float = field(default=0.0, metadata={'private': True})
+    hole_42: float = field(default=0.0, metadata={'private': True}); hole_43: float = field(default=0.0, metadata={'private': True})
+    hole_44: float = field(default=0.0, metadata={'private': True}); hole_45: float = field(default=0.0, metadata={'private': True})
+    hole_46: float = field(default=0.0, metadata={'private': True}); hole_47: float = field(default=0.0, metadata={'private': True})
+    hole_48: float = field(default=0.0, metadata={'private': True}); hole_49: float = field(default=0.0, metadata={'private': True})
+    hole_50: float = field(default=0.0, metadata={'private': True}); hole_51: float = field(default=0.0, metadata={'private': True})
     
     # Hole card rank analysis (4 features - intrinsic potential only)
-    hole_integral_of_highness: float = 0.0
-    hole_highest_rank: float = 0.0  
-    hole_lowest_rank: float = 0.0
-    hole_rank_spread: float = 0.0
+    hole_integral_of_highness: float = field(default=0.0, metadata={'private': True})
+    hole_highest_rank: float = field(default=0.0, metadata={'private': True})  
+    hole_lowest_rank: float = field(default=0.0, metadata={'private': True})
+    hole_rank_spread: float = field(default=0.0, metadata={'private': True})
     
     # Hole card texture (59 features) - comprehensive analysis of hole cards only
-    hole_card_texture: TextureFeatureSet = field(default_factory=TextureFeatureSet)
+    hole_card_texture: TextureFeatureSet = field(default_factory=TextureFeatureSet, metadata={'private': True})
     
     # Raw strength calculation - MOVED TO ADDITIONAL FEATURES
     
     # Monotonic strength categories (9 features)
-    at_least_pair: float = 0.0
-    at_least_two_pair: float = 0.0
-    at_least_three_kind: float = 0.0
-    at_least_straight: float = 0.0
-    at_least_flush: float = 0.0
-    at_least_full_house: float = 0.0
-    at_least_four_kind: float = 0.0
-    straight_flush: float = 0.0
-    royal_flush: float = 0.0
+    at_least_pair: float = field(default=0.0, metadata={'private': True})
+    at_least_two_pair: float = field(default=0.0, metadata={'private': True})
+    at_least_three_kind: float = field(default=0.0, metadata={'private': True})
+    at_least_straight: float = field(default=0.0, metadata={'private': True})
+    at_least_flush: float = field(default=0.0, metadata={'private': True})
+    at_least_full_house: float = field(default=0.0, metadata={'private': True})
+    at_least_four_kind: float = field(default=0.0, metadata={'private': True})
+    straight_flush: float = field(default=0.0, metadata={'private': True})
+    royal_flush: float = field(default=0.0, metadata={'private': True})
     
     # Kicker information (5 features)
-    kicker_1: float = 0.0
-    kicker_2: float = 0.0
-    kicker_3: float = 0.0
-    kicker_4: float = 0.0
-    kicker_5: float = 0.0
+    kicker_1: float = field(default=0.0, metadata={'private': True})
+    kicker_2: float = field(default=0.0, metadata={'private': True})
+    kicker_3: float = field(default=0.0, metadata={'private': True})
+    kicker_4: float = field(default=0.0, metadata={'private': True})
+    kicker_5: float = field(default=0.0, metadata={'private': True})
     
     # MADE hand texture (24 features) - flush and straight potential of my hole cards + board
-    hand_texture: TextureFeatureSet = field(default_factory=TextureFeatureSet)
+    hand_texture: TextureFeatureSet = field(default_factory=TextureFeatureSet, metadata={'private': True})
     
     def to_list(self) -> List[float]:
         result = []
@@ -206,22 +221,23 @@ class CurrentStreetSequenceFeatures:
     """Current street sequence features for any seat_id [OPPONENT REPRODUCIBLE]"""
     # From CurrentStreetAnalyzer.calculate_current_street_sequence()
     checked_count: float = 0.0                      # Seat id checked x times
+    called_count: float = 0.0                       # Seat id called x times
     raised_count: float = 0.0                       # Seat id raised (includes initial bet) x times
-    raise_pct_of_pot: float = 0.0                   # Seat id raised by x% of pot before raise (strategic sizing)
-    bet_to_starting_pot: float = 0.0                # Seat id total bet as x% of starting street pot (commitment level)
+    avg_raise_pct_of_pot: float = 0.0                   # Seat id raised by x% of pot before raise (strategic sizing)
+    aggro_commit_ratio: float = 0.0  # Seat id total wagered as x% of starting pot (only if bet/raised)
     overbet_count: float = 0.0                      # Seat id overbet (>100% of pot raise/bet) x times
     largebet_count: float = 0.0                     # Seat id largebet (>70% of pot raise/bet) x times
-    is_facing_check: float = 0.0                    # Seat id is currently facing a check
-    is_facing_bet: float = 0.0                      # Seat id is currently facing a bet
-    is_facing_raise: float = 0.0                    # Seat id is currently facing a raise (2bet)
-    is_facing_3bet: float = 0.0                     # Seat id is currently facing a 3bet
-    is_facing_4betplus: float = 0.0                 # Seat id is currently facing a 4bet+ [all monotonic]
+    smallbet_count: float = 0.0                     # Seat id smallbet (<=33% of pot raise/bet) x times
     # Strategic features
     did_check_raise: float = 0.0                    # Seat id check-raised on this street
     did_donk_bet: float = 0.0                       # Seat id made donk bet (bet OOP, not prev street aggressor)
     did_3bet: float = 0.0                           # Seat id made 3-bet this street
     did_float_bet: float = 0.0                      # Seat id made float bet (called prev street IP, bet when checked to)
     did_probe_bet: float = 0.0                      # Seat id made probe bet (bet OOP after PF aggressor checked back)
+    did_cbet: float = 0.0                           # Seat id continued aggression from previous street (unified c-bet)
+    did_go_all_in: float = 0.0                      # Seat id went all-in on this street
+    did_open_overbet: float = 0.0                   # Seat id made opening overbet (first aggressive action >100% pot)
+    did_open_largebet: float = 0.0                  # Seat id made opening large bet (first aggressive action >70% pot)
     
     def to_list(self) -> List[float]:
         return [getattr(self, f.name) for f in fields(self)]
@@ -239,9 +255,11 @@ class CurrentStreetStackFeatures:
     current_street_commitment_bb: float = 0.0       # Seat id amount committed this street in BB
     current_street_commitment_vs_starting_pot: float = 0.0  # Seat id amount committed this street / starting pot this street
     current_street_commitment_vs_starting_stack: float = 0.0  # Seat id amount committed this street / seat id starting stack this street
-    total_commitment: float = 0.0                   # Seat id total commitment (across all streets: % of stack committed)
+    total_commitment_pct: float = 0.0               # Seat id total commitment (across all streets: % of stack committed)
     total_commitment_bb: float = 0.0                # Seat id total commitment in BB
     stack_smaller_than_pot: float = 0.0             # Seat id stack is smaller than pot
+    last_pot_odds_faced_this_street: float = 0.0    # Last pot odds this player faced before their last action on this street
+    last_call_cost_faced_this_street: float = 0.0   # Last call cost ratio this player faced before their last action on this street
     
     def to_list(self) -> List[float]:
         return [getattr(self, f.name) for f in fields(self)]
@@ -251,7 +269,7 @@ class CurrentStreetStackFeatures:
 class CurrentPositionFeatures:
     """Current position features for any seat_id [OPPONENT REPRODUCIBLE]"""
     # From CurrentStreetAnalyzer.calculate_current_position()
-    is_early_position: float = 0.0                  # Seat id is early position
+    is_OOP: float = 0.0                             # Seat id is OOP
     is_dealer: float = 0.0                          # Seat id is dealer
     is_sb: float = 0.0                              # Seat id is SB (heads up, this = dealer)
     is_bb: float = 0.0                              # Seat id is BB
@@ -275,22 +293,47 @@ class CurrentStageFeatures:
 
 @dataclass
 class CurrentAdditionalFeatures:
-    """Current additional features (Hero only)"""
+    """Current additional features (self only)"""
     # From CurrentStreetAnalyzer.calculate_current_street_additional()
-    effective_spr: float = 0.0                      # Effective stack to pot ratio (min(stacks) / pot)
-    implied_odds: float = 0.0                       # Implied odds (now considers opponent range)
-    
+    effective_spr: float = 0.0                                              # Effective stack to pot ratio (min(stacks) / pot)    
     # Hand strength features (moved here for history tracking)
-    hand_strength: float = 0.0                      # MC sims vs random hands
-    equity_vs_range: float = 0.0                    # Equity vs opponent's estimated range
-    
+    hand_strength: float = 0.0                                              # MC sims vs random hands
+    # add the pot size ratio here?* later.
     # Delta features (change from previous street)
-    equity_delta: float = 0.0                       # Change in equity_vs_range from previous street
-    spr_delta: float = 0.0                          # Change in effective SPR from previous street
-    pot_size_delta: float = 0.0                     # Change in pot size from previous street
+    equity_delta: float = field(default=0.0, metadata={'leaky': True})      # Change in equity_vs_range from previous street
+    spr_delta: float = 0.0                                                  # Change in effective SPR from previous street
+    pot_size_delta: float = 0.0                                             # Change in pot size from previous street
+    
+    # Decision context features (self only - opponent never faces decisions during feature extraction)
+    is_facing_check: float = 0.0                                            # self is currently facing a check
+    is_facing_bet: float = 0.0                                              # self is currently facing a bet
+    is_facing_raise: float = 0.0                                            # self is currently facing a raise (2bet)
+    is_facing_3bet: float = 0.0                                             # self is currently facing a 3bet
+    is_facing_4betplus: float = 0.0                                         # self is currently facing a 4bet+
     
     def to_list(self) -> List[float]:
         return [getattr(self, f.name) for f in fields(self)]
+
+@dataclass
+class CurrentStrategicFeatures:
+    """Current strategic features (self only)"""
+    # From StrategicAnalyzer
+    implied_odds: float = field(default=0.0, metadata={'leaky': True})
+    equity_vs_range: float = field(default=0.0, metadata={'leaky': True})
+    hand_vs_range: float = field(default=0.0, metadata={'leaky': True})
+    fold_equity: float = field(default=0.0, metadata={'leaky': True})
+    showdown_equity: float = field(default=0.0, metadata={'leaky': True})
+    reverse_implied_odds: float = field(default=0.0, metadata={'leaky': True})
+    range_vs_range: float = field(default=0.0, metadata={'leaky': True})
+    future_payoff: float = field(default=0.0, metadata={'leaky': True})
+    playability: float = field(default=0.0, metadata={'leaky': True})
+    
+    def to_list(self) -> List[float]:
+        return [getattr(self, f.name) for f in fields(self)]
+    
+    def to_dict(self) -> dict:
+        return {f.name: getattr(self, f.name) for f in fields(self)}
+
 
 # =============================================================================
 # HISTORY FEATURES (History tracked, opponent reproducible for some)
@@ -302,10 +345,13 @@ class SequenceHistoryFeatures:
     # From HistoryAnalyzer.calculate_sequence_history() - per street data
     # Preflop features
     preflop_checked_count: float = 0.0               # Seat id checked x times
+    preflop_called_count: float = 0.0                # Seat id called x times
     preflop_raised_count: float = 0.0                # Seat id raised (includes initial bet) x times
-    preflop_avg_raise_pct: float = 0.0               # Seat id raised by x% of pot on average
-    preflop_overbet_once: float = 0.0                # Seat id overbet (>100% of pot raise) at least once
+    preflop_avg_raise_pct_of_pot: float = 0.0        # Seat id raised BY x% of pot on average
+    preflop_aggro_commit_ratio: float = 0.0  # Seat id wagered TO x% of starting pot (only if bet/raised)
+    preflop_overbet_count: float = 0.0               # Seat id overbet (>100% of pot raise) x times
     preflop_largebet_count: float = 0.0              # Seat id largebet (>70% of pot raise/bet) x times
+    preflop_smallbet_count: float = 0.0              # Seat id smallbet (<=33% of pot raise/bet) x times
     preflop_was_first_bettor: float = 0.0            # Seat id was first raiser/bettor
     preflop_was_last_bettor: float = 0.0             # Seat id was last raiser/bettor
     # Strategic features
@@ -314,13 +360,20 @@ class SequenceHistoryFeatures:
     preflop_did_donk_bet: float = 0.0                # Seat id made donk bet preflop
     preflop_did_float_bet: float = 0.0               # Seat id made float bet preflop
     preflop_did_probe_bet: float = 0.0               # Seat id made probe bet preflop
+    preflop_did_cbet: float = 0.0                    # Seat id continued aggression from previous street (unified c-bet)
+    preflop_did_go_all_in: float = 0.0               # Seat id went all-in preflop
+    preflop_did_open_overbet: float = 0.0            # Seat id made opening overbet preflop
+    preflop_did_open_largebet: float = 0.0           # Seat id made opening large bet preflop
     
     # Flop features
     flop_checked_count: float = 0.0
+    flop_called_count: float = 0.0
     flop_raised_count: float = 0.0
-    flop_avg_raise_pct: float = 0.0
-    flop_overbet_once: float = 0.0
+    flop_avg_raise_pct_of_pot: float = 0.0
+    flop_aggro_commit_ratio: float = 0.0
+    flop_overbet_count: float = 0.0
     flop_largebet_count: float = 0.0
+    flop_smallbet_count: float = 0.0
     flop_was_first_bettor: float = 0.0
     flop_was_last_bettor: float = 0.0
     # Strategic features
@@ -329,13 +382,20 @@ class SequenceHistoryFeatures:
     flop_did_donk_bet: float = 0.0
     flop_did_float_bet: float = 0.0
     flop_did_probe_bet: float = 0.0
+    flop_did_cbet: float = 0.0
+    flop_did_go_all_in: float = 0.0
+    flop_did_open_overbet: float = 0.0
+    flop_did_open_largebet: float = 0.0
     
     # Turn features
     turn_checked_count: float = 0.0
+    turn_called_count: float = 0.0
     turn_raised_count: float = 0.0
-    turn_avg_raise_pct: float = 0.0
-    turn_overbet_once: float = 0.0
+    turn_avg_raise_pct_of_pot: float = 0.0
+    turn_aggro_commit_ratio: float = 0.0
+    turn_overbet_count: float = 0.0
     turn_largebet_count: float = 0.0
+    turn_smallbet_count: float = 0.0
     turn_was_first_bettor: float = 0.0
     turn_was_last_bettor: float = 0.0
     # Strategic features
@@ -344,13 +404,20 @@ class SequenceHistoryFeatures:
     turn_did_donk_bet: float = 0.0
     turn_did_float_bet: float = 0.0
     turn_did_probe_bet: float = 0.0
+    turn_did_cbet: float = 0.0
+    turn_did_go_all_in: float = 0.0
+    turn_did_open_overbet: float = 0.0
+    turn_did_open_largebet: float = 0.0
     
     # River features
     river_checked_count: float = 0.0
+    river_called_count: float = 0.0
     river_raised_count: float = 0.0
-    river_avg_raise_pct: float = 0.0
-    river_overbet_once: float = 0.0
+    river_avg_raise_pct_of_pot: float = 0.0
+    river_aggro_commit_ratio: float = 0.0
+    river_overbet_count: float = 0.0
     river_largebet_count: float = 0.0
+    river_smallbet_count: float = 0.0
     river_was_first_bettor: float = 0.0
     river_was_last_bettor: float = 0.0
     # Strategic features
@@ -359,6 +426,10 @@ class SequenceHistoryFeatures:
     river_did_donk_bet: float = 0.0
     river_did_float_bet: float = 0.0
     river_did_probe_bet: float = 0.0
+    river_did_cbet: float = 0.0
+    river_did_go_all_in: float = 0.0
+    river_did_open_overbet: float = 0.0
+    river_did_open_largebet: float = 0.0
     
     def to_list(self) -> List[float]:
         return [getattr(self, f.name) for f in fields(self)]
@@ -371,41 +442,49 @@ class StackHistoryFeatures:
     # Preflop features
     preflop_stack_in_bb: float = 0.0                 # Seat id stack in BB
     preflop_pot_size_ratio: float = 0.0              # Seat id pot size ratio (pot size / total money)
-    preflop_call_cost_ratio: float = 0.0             # Seat id call cost ratio (to call / stack)
-    preflop_pot_odds: float = 0.0                    # Seat id pot odds (to call / (pot + to call))
+    preflop_final_call_cost_ratio: float = 0.0       # Seat id final call cost ratio (to call / stack)  
+    preflop_final_call_pot_odds: float = 0.0         # Seat id final call pot odds (to call / (pot + to call))
     preflop_stack_size_ratio: float = 0.0            # Seat id stack size ratio (stack / total money)
     preflop_current_street_commitment_bb: float = 0.0  # Seat id amount committed this street in BB
-    preflop_total_commitment: float = 0.0            # Seat id total commitment (across all streets so far: % of stack committed)
+    preflop_current_street_commitment_vs_starting_pot: float = 0.0  # Seat id amount committed this street / starting pot this street
+    preflop_current_street_commitment_vs_starting_stack: float = 0.0  # Seat id amount committed this street / seat id starting stack this street
+    preflop_total_commitment_pct: float = 0.0        # Seat id total commitment (across all streets so far: % of stack committed)
     preflop_total_commitment_bb: float = 0.0         # Seat id total commitment (across all streets so far: in BB)
     
     # Flop features
     flop_stack_in_bb: float = 0.0
     flop_pot_size_ratio: float = 0.0
-    flop_call_cost_ratio: float = 0.0
-    flop_pot_odds: float = 0.0
+    flop_final_call_cost_ratio: float = 0.0
+    flop_final_call_pot_odds: float = 0.0
     flop_stack_size_ratio: float = 0.0
     flop_current_street_commitment_bb: float = 0.0
-    flop_total_commitment: float = 0.0
+    flop_current_street_commitment_vs_starting_pot: float = 0.0
+    flop_current_street_commitment_vs_starting_stack: float = 0.0
+    flop_total_commitment_pct: float = 0.0
     flop_total_commitment_bb: float = 0.0
     
     # Turn features
     turn_stack_in_bb: float = 0.0
     turn_pot_size_ratio: float = 0.0
-    turn_call_cost_ratio: float = 0.0
-    turn_pot_odds: float = 0.0
+    turn_final_call_cost_ratio: float = 0.0
+    turn_final_call_pot_odds: float = 0.0
     turn_stack_size_ratio: float = 0.0
     turn_current_street_commitment_bb: float = 0.0
-    turn_total_commitment: float = 0.0
+    turn_current_street_commitment_vs_starting_pot: float = 0.0
+    turn_current_street_commitment_vs_starting_stack: float = 0.0
+    turn_total_commitment_pct: float = 0.0
     turn_total_commitment_bb: float = 0.0
     
     # River features
     river_stack_in_bb: float = 0.0
     river_pot_size_ratio: float = 0.0
-    river_call_cost_ratio: float = 0.0
-    river_pot_odds: float = 0.0
+    river_final_call_cost_ratio: float = 0.0
+    river_final_call_pot_odds: float = 0.0
     river_stack_size_ratio: float = 0.0
     river_current_street_commitment_bb: float = 0.0
-    river_total_commitment: float = 0.0
+    river_current_street_commitment_vs_starting_pot: float = 0.0
+    river_current_street_commitment_vs_starting_stack: float = 0.0
+    river_total_commitment_pct: float = 0.0
     river_total_commitment_bb: float = 0.0
     
     def to_list(self) -> List[float]:
@@ -414,28 +493,63 @@ class StackHistoryFeatures:
 
 @dataclass
 class AdditionalHistoryFeatures:
-    """Additional history features (Hero only) [HISTORY TRACKED]"""
+    """Additional history features (self only) [HISTORY TRACKED]"""
     # From HistoryAnalyzer.calculate_additional_history() - per street data
-    preflop_effective_spr: float = 0.0               # Effective stack to pot ratio (min(stacks) / pot)
-    preflop_implied_odds: float = 0.0                # Implied odds
-    preflop_hand_strength: float = 0.0               # MC sims vs random hands
-    preflop_equity_vs_range: float = 0.0             # Equity vs opponent's estimated range
-    
+    preflop_effective_spr: float = 0.0                                              # Effective stack to pot ratio (min(stacks) / pot)
+    preflop_hand_strength: float = 0.0                                              # MC sims vs random hands
     flop_effective_spr: float = 0.0
-    flop_implied_odds: float = 0.0
     flop_hand_strength: float = 0.0
-    flop_equity_vs_range: float = 0.0
-    
     turn_effective_spr: float = 0.0
-    turn_implied_odds: float = 0.0
     turn_hand_strength: float = 0.0
-    turn_equity_vs_range: float = 0.0
-    
     river_effective_spr: float = 0.0
-    river_implied_odds: float = 0.0
     river_hand_strength: float = 0.0
-    river_equity_vs_range: float = 0.0
     
+    def to_list(self) -> List[float]:
+        return [getattr(self, f.name) for f in fields(self)]
+
+@dataclass
+class StrategicHistoryFeatures:
+    """Strategic history features (self only) [HISTORY TRACKED]"""
+    # Pre-flop Strategic History
+    preflop_implied_odds: float = field(default=0.0, metadata={'leaky': True})
+    preflop_equity_vs_range: float = field(default=0.0, metadata={'leaky': True})
+    preflop_range_vs_range_equity: float = field(default=0.0, metadata={'leaky': True})
+    preflop_fold_equity: float = field(default=0.0, metadata={'leaky': True})
+    preflop_showdown_equity: float = field(default=0.0, metadata={'leaky': True})
+    preflop_reverse_implied_odds: float = field(default=0.0, metadata={'leaky': True})
+    preflop_range_vs_range: float = field(default=0.0, metadata={'leaky': True})
+    preflop_future_payoff: float = field(default=0.0, metadata={'leaky': True})
+
+    # Flop Strategic History
+    flop_implied_odds: float = field(default=0.0, metadata={'leaky': True})
+    flop_equity_vs_range: float = field(default=0.0, metadata={'leaky': True})
+    flop_range_vs_range_equity: float = field(default=0.0, metadata={'leaky': True})
+    flop_fold_equity: float = field(default=0.0, metadata={'leaky': True})
+    flop_showdown_equity: float = field(default=0.0, metadata={'leaky': True})
+    flop_reverse_implied_odds: float = field(default=0.0, metadata={'leaky': True})
+    flop_range_vs_range: float = field(default=0.0, metadata={'leaky': True})
+    flop_future_payoff: float = field(default=0.0, metadata={'leaky': True})
+    
+    # Turn Strategic History
+    turn_implied_odds: float = field(default=0.0, metadata={'leaky': True})
+    turn_equity_vs_range: float = field(default=0.0, metadata={'leaky': True})
+    turn_range_vs_range_equity: float = field(default=0.0, metadata={'leaky': True})
+    turn_fold_equity: float = field(default=0.0, metadata={'leaky': True})
+    turn_showdown_equity: float = field(default=0.0, metadata={'leaky': True})
+    turn_reverse_implied_odds: float = field(default=0.0, metadata={'leaky': True})
+    turn_range_vs_range: float = field(default=0.0, metadata={'leaky': True})
+    turn_future_payoff: float = field(default=0.0, metadata={'leaky': True})
+
+    # River Strategic History
+    river_implied_odds: float = field(default=0.0, metadata={'leaky': True})
+    river_equity_vs_range: float = field(default=0.0, metadata={'leaky': True})
+    river_range_vs_range_equity: float = field(default=0.0, metadata={'leaky': True})
+    river_fold_equity: float = field(default=0.0, metadata={'leaky': True})
+    river_showdown_equity: float = field(default=0.0, metadata={'leaky': True})
+    river_reverse_implied_odds: float = field(default=0.0, metadata={'leaky': True})
+    river_range_vs_range: float = field(default=0.0, metadata={'leaky': True})
+    river_future_payoff: float = field(default=0.0, metadata={'leaky': True})
+
     def to_list(self) -> List[float]:
         return [getattr(self, f.name) for f in fields(self)]
 
@@ -552,20 +666,20 @@ class PokerFeatureSchema:
     Makes every feature instantly findable and self-documenting.
     
     Core Features: 188 + 120 = 308 features (MyHandFeatures with full texture analysis)
-    Current Street (Hero + Opponent): (11 + 11 + 4) * 2 + 4 + 7 = 63 features (added hand_strength, equity_vs_range, 3 deltas)
-    History (Hero + Opponent): (28 + 32) * 2 + 16 = 136 features (added 8 hand strength/equity history features)
-    Opponent Model: 56 features (per-street strategic statistics + advanced patterns)
-    Total: 308 + 63 + 136 + 56 = 563 features
+    Current Street (self + Opponent): (17 + 13 + 4) * 2 + 4 + 10 + 9 = 91 features (includes strategic features)
+    History (self + Opponent): (76 + 40) * 2 + 8 + 32 = 272 features (includes strategic history)
+    Opponent Model: 54 features (per-street strategic statistics + advanced patterns)
+    Total: 308 + 91 + 272 + 54 = 725 features
     """
     # === CORE POKER CONCEPTS ===
     my_hand: MyHandFeatures = field(default_factory=MyHandFeatures)                    # 188 features
     board: BoardFeatures = field(default_factory=BoardFeatures)                       # 120 features
     
     # === CURRENT STREET FEATURES (No history tracking) ===
-    # Hero features
-    hero_current_sequence: CurrentStreetSequenceFeatures = field(default_factory=CurrentStreetSequenceFeatures)  # 10 features
-    hero_current_stack: CurrentStreetStackFeatures = field(default_factory=CurrentStreetStackFeatures)            # 11 features
-    hero_current_position: CurrentPositionFeatures = field(default_factory=CurrentPositionFeatures)              # 4 features
+    # self features
+    self_current_sequence: CurrentStreetSequenceFeatures = field(default_factory=CurrentStreetSequenceFeatures)  # 10 features
+    self_current_stack: CurrentStreetStackFeatures = field(default_factory=CurrentStreetStackFeatures)            # 11 features
+    self_current_position: CurrentPositionFeatures = field(default_factory=CurrentPositionFeatures)              # 4 features
     
     # Opponent features (reproducible for opponent analysis)
     opponent_current_sequence: CurrentStreetSequenceFeatures = field(default_factory=CurrentStreetSequenceFeatures)  # 10 features
@@ -574,19 +688,21 @@ class PokerFeatureSchema:
     
     # Non-seat-specific features
     current_stage: CurrentStageFeatures = field(default_factory=CurrentStageFeatures)                       # 4 features
-    current_additional: CurrentAdditionalFeatures = field(default_factory=CurrentAdditionalFeatures)        # 7 features (hero only)
+    current_additional: CurrentAdditionalFeatures = field(default_factory=CurrentAdditionalFeatures)        # 7 features (self only)
+    current_strategic: CurrentStrategicFeatures = field(default_factory=CurrentStrategicFeatures)          # 9 features (self only)
     
     # === HISTORY FEATURES (History tracked) ===
-    # Hero history
-    hero_sequence_history: SequenceHistoryFeatures = field(default_factory=SequenceHistoryFeatures)             # 28 features (7*4)
-    hero_stack_history: StackHistoryFeatures = field(default_factory=StackHistoryFeatures)                      # 32 features (8*4)
+    # self history
+    self_sequence_history: SequenceHistoryFeatures = field(default_factory=SequenceHistoryFeatures)             # 28 features (7*4)
+    self_stack_history: StackHistoryFeatures = field(default_factory=StackHistoryFeatures)                      # 32 features (8*4)
     
     # Opponent history (reproducible for opponent analysis)
     opponent_sequence_history: SequenceHistoryFeatures = field(default_factory=SequenceHistoryFeatures)         # 28 features (7*4)
     opponent_stack_history: StackHistoryFeatures = field(default_factory=StackHistoryFeatures)                  # 32 features (8*4)
     
     # Non-seat-specific history
-    additional_history: AdditionalHistoryFeatures = field(default_factory=AdditionalHistoryFeatures)       # 16 features (hero only)
+    additional_history: AdditionalHistoryFeatures = field(default_factory=AdditionalHistoryFeatures)       # 16 features (self only)
+    strategic_history: StrategicHistoryFeatures = field(default_factory=StrategicHistoryFeatures)          # 32 features (self only)
     
     # === OPPONENT MODEL FEATURES ===
     # Opponent statistical profile based on observed behavior
@@ -600,22 +716,24 @@ class PokerFeatureSchema:
         vector.extend(self.my_hand.to_list())                     # 185 features
         vector.extend(self.board.to_list())                       # 120 features
         
-        # Current street features (hero + opponent)
-        vector.extend(self.hero_current_sequence.to_list())       # 10 features
-        vector.extend(self.hero_current_stack.to_list())          # 11 features
-        vector.extend(self.hero_current_position.to_list())       # 4 features
+        # Current street features (self + opponent)
+        vector.extend(self.self_current_sequence.to_list())       # 10 features
+        vector.extend(self.self_current_stack.to_list())          # 11 features
+        vector.extend(self.self_current_position.to_list())       # 4 features
         vector.extend(self.opponent_current_sequence.to_list())   # 10 features
         vector.extend(self.opponent_current_stack.to_list())      # 11 features
         vector.extend(self.opponent_current_position.to_list())   # 4 features
         vector.extend(self.current_stage.to_list())               # 4 features
         vector.extend(self.current_additional.to_list())          # 2 features
+        vector.extend(self.current_strategic.to_list())          # 9 features 
         
-        # History features (hero + opponent)
-        vector.extend(self.hero_sequence_history.to_list())       # 28 features
-        vector.extend(self.hero_stack_history.to_list())          # 32 features
+        # History features (self + opponent)
+        vector.extend(self.self_sequence_history.to_list())       # 28 features
+        vector.extend(self.self_stack_history.to_list())          # 32 features
         vector.extend(self.opponent_sequence_history.to_list())   # 28 features
         vector.extend(self.opponent_stack_history.to_list())      # 32 features
         vector.extend(self.additional_history.to_list())          # 8 features
+        vector.extend(self.strategic_history.to_list())           # 32 features
         vector.extend(self.opponent_model.to_list())              # 56 features
         
         return vector
@@ -659,7 +777,7 @@ class PokerFeatureSchema:
         summary += f"  {'TOTAL':25} {total_features:3d} features\n"
         return summary
     
-    def validate_feature_count(self, expected: int = 563) -> bool:
+    def validate_feature_count(self, expected: int = 725) -> bool:
         """Validate that we have the expected number of features."""
         actual = len(self.to_vector())
         if actual != expected:

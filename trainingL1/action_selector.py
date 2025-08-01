@@ -208,7 +208,7 @@ class ActionSelector:
         bet_fraction = max(0.05, min(2.2, bet_fraction))  # Even wider range for exploitation
         
         # Map to wider betting range for exploitation (can overbet more than GTO)
-        # 0.05 -> min_raise (minimum legal bet)
+        # 0.05 -> 5% pot for blockers/continuation
         # 2.2 -> 2.2x pot bet (or all-in if smaller) for maximum aggression
         overbet_size = min(int(pot * 2.2), max_bet)  # Exploiter can be more aggressive than GTO
         bet_range = overbet_size - min_raise

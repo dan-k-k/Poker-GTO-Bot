@@ -133,6 +133,7 @@ class GameState:
     current_bets: List[int]      # Current round bets
     pot: int                     # Current pot size
     starting_pot_this_round: int # Pot size at start of current betting round
+    starting_stacks_this_hand: List[int] # Each player's stack at start of hand (before blinds)
     
     # Player states
     active: List[bool]           # Is player still in hand

@@ -118,6 +118,11 @@ class TrainingUtils:
         state['as_chip_performance'] = list(trainer_instance.as_chip_performance)
         state['br_consecutive_training'] = trainer_instance.br_consecutive_training
         
+        # === PERSIST AGENT STAT HISTORY FOR PLOTS ===
+        state['as_stat_history'] = trainer_instance.as_stat_history
+        state['br_stat_history'] = trainer_instance.br_stat_history
+        # ===============================================
+        
         try:
             # Save main state as JSON
             state_path = TrainingUtils.get_training_path('training_state.json')
@@ -171,9 +176,19 @@ class TrainingUtils:
                 trainer_instance.as_training_losses.extend(saved_losses)
                 trainer_instance.as_chip_performance.extend(saved_chip_perf)
                 trainer_instance.br_consecutive_training = state.get('br_consecutive_training', 0)
+
+                # === RESTORE AGENT STAT HISTORY FOR PLOTS ===
+                trainer_instance.as_stat_history = state.get('as_stat_history', [])
+                trainer_instance.br_stat_history = state.get('br_stat_history', [])
+                # ==============================================
                 
                 print(f"✅ Resumed from episode {trainer_instance.current_episode}")
                 print(f"📊 Loaded {len(trainer_instance.avg_strategy_losses)} loss data points")
+                
+                # === CONFIRMATION MESSAGE FOR STAT HISTORY ===
+                if trainer_instance.as_stat_history or trainer_instance.br_stat_history:
+                    print(f"📊 Loaded {len(trainer_instance.as_stat_history)} AS and {len(trainer_instance.br_stat_history)} BR stat history records")
+                # ===============================================
                 
                 # Try to load replay buffers
                 buffers_path = TrainingUtils.get_training_path('training_buffers.pkl')
@@ -600,7 +615,7 @@ class TrainingUtils:
             print("📊 matplotlib not available - saved data for external plotting")
         except Exception as e:
             print(f"⚠️  Failed to create agent stats plots: {e}")
-    
+
     @staticmethod
     def generate_gto_report(trainer_instance):
         """Generate training report focused on GTO metrics."""
@@ -633,4 +648,43 @@ class TrainingUtils:
                     print(f"   {category.capitalize()}: {data['percentage']:.1f}%")
         
         print("="*60)
+
+class TrainingWatchdog:
+    """
+    A watchdog timer to detect if training gets stuck on a single episode.
+    Uses signal alarms to interrupt long-running processes and provide a traceback.
+    """
+    def __init__(self, seconds=60, error_message='Training episode timed out.'):
+        self.timeout_seconds = seconds
+        self.error_message = error_message
+
+    def _handle_timeout(self, signum, frame):
+        """
+        This function is called when the alarm signal is received.
+        It prints the current execution frame (stack trace) to show where the code is stuck.
+        """
+        import traceback
+        print(f"\n{'='*80}")
+        print(f"🚨 WATCHDOG TIMEOUT: Episode exceeded {self.timeout_seconds} seconds.")
+        print(f"   This indicates a potential infinite loop or deadlock.")
+        print(f"   The stack trace below shows exactly where the program was executing.")
+        print(f"{'='*80}\n")
+        traceback.print_stack(frame)
+        print(f"\n{'='*80}")
+        raise TimeoutError(self.error_message)
+
+    def __enter__(self):
+        """Starts the timer when entering a 'with' block."""
+        try:
+            signal.signal(signal.SIGALRM, self._handle_timeout)
+            signal.alarm(self.timeout_seconds)
+        except ValueError:
+            print("🚨 Watchdog warning: Cannot set signal handler in a non-main thread.")
+
+    def __exit__(self, type, value, traceback):
+        """Stops the timer when exiting the 'with' block."""
+        try:
+            signal.alarm(0)  # Disable the alarm
+        except ValueError:
+            pass # Ignore error if not in main thread
 

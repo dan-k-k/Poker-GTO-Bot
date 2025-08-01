@@ -1,4 +1,4 @@
-# trainingL1/live_debugger.py
+# trainingL1/live_feature_debugger.py
 # Live feature debugging during training - formats features into human-readable strings
 # for integration with hand_histories.log
 
@@ -86,7 +86,7 @@ class LiveFeatureDebugger:
     
     def get_position_string(self, schema: PokerFeatureSchema) -> str:
         """Get position in readable format."""
-        pos = schema.hero_current_position
+        pos = schema.self_current_position
         
         positions = []
         if pos.is_dealer == 1.0:
@@ -95,8 +95,8 @@ class LiveFeatureDebugger:
             positions.append("SB")
         if pos.is_bb == 1.0:
             positions.append("BB")
-        if pos.is_early_position == 1.0 and not positions:
-            positions.append("Early")
+        if pos.is_OOP == 1.0 and not positions:
+            positions.append("OOP")
         
         return ', '.join(positions) if positions else "Unknown"
     
@@ -117,18 +117,19 @@ class LiveFeatureDebugger:
     
     def get_facing_string(self, schema: PokerFeatureSchema) -> str:
         """Get what the player is currently facing."""
-        seq = schema.hero_current_sequence
+        # Get facing features from additional features (moved from sequence features)
+        additional = schema.current_additional
         
         facing = []
-        if seq.is_facing_4betplus == 1.0:
+        if additional.is_facing_4betplus == 1.0:
             facing.append("4-bet+")
-        elif seq.is_facing_3bet == 1.0:
+        elif additional.is_facing_3bet == 1.0:
             facing.append("3-bet")
-        elif seq.is_facing_raise == 1.0:
+        elif additional.is_facing_raise == 1.0:
             facing.append("Raise")
-        elif seq.is_facing_bet == 1.0:
+        elif additional.is_facing_bet == 1.0:
             facing.append("Bet")
-        elif seq.is_facing_check == 1.0:
+        elif additional.is_facing_check == 1.0:
             facing.append("Check")
         
         return ', '.join(facing) if facing else "Nothing"
@@ -145,10 +146,10 @@ class LiveFeatureDebugger:
         equity_vs_range = schema.current_additional.equity_vs_range
         
         # Stack and pot info
-        stack = schema.hero_current_stack
+        stack = schema.self_current_stack
         actual_stack_bb = stack.stack_in_bb * 200.0 if stack.stack_in_bb <= 1.0 else stack.stack_in_bb
         pot_odds = stack.pot_odds
-        commitment = stack.total_commitment
+        commitment = stack.total_commitment_pct
         
         # Position and facing
         position = self.get_position_string(schema)
@@ -186,10 +187,10 @@ class LiveFeatureDebugger:
             lines.append(f"    📈 Deltas: Equity {deltas.equity_delta:+.1%} | SPR {deltas.spr_delta:+.2f} | Pot {deltas.pot_size_delta:+.1f}BB")
         
         # Stack and pot dynamics
-        stack = schema.hero_current_stack
+        stack = schema.self_current_stack
         actual_stack_bb = stack.stack_in_bb * 200.0 if stack.stack_in_bb <= 1.0 else stack.stack_in_bb
         lines.append(f"     Stack: {actual_stack_bb:.1f}BB | Pot Odds: {stack.pot_odds:.3f} | Call Cost: {stack.call_cost_ratio:.3f}")
-        lines.append(f"     Commitment: {stack.total_commitment:.1%} total | {stack.current_street_commitment_vs_starting_stack:.1%} this street")
+        lines.append(f"     Commitment: {stack.total_commitment_pct:.1%} total | {stack.current_street_commitment_vs_starting_stack:.1%} this street")
         
         # Strategic features
         additional = schema.current_additional
@@ -202,7 +203,7 @@ class LiveFeatureDebugger:
         lines.append(f"     Context: {street} | {position} | Facing: {facing}")
         
         # Action history (current street)
-        seq = schema.hero_current_sequence
+        seq = schema.self_current_sequence
         if seq.checked_count > 0 or seq.raised_count > 0:
             aggression = seq.raised_count / (seq.checked_count + seq.raised_count) if (seq.checked_count + seq.raised_count) > 0 else 0
             lines.append(f"     Actions: Check×{seq.checked_count:.0f} | Raise×{seq.raised_count:.0f} | Aggression: {aggression:.1%}")
@@ -255,7 +256,7 @@ class LiveFeatureDebugger:
         
         # Basic opponent info
         opp_stack_bb = opp_stack.stack_in_bb * 200.0 if opp_stack.stack_in_bb <= 1.0 else opp_stack.stack_in_bb
-        opp_commitment = opp_stack.total_commitment
+        opp_commitment = opp_stack.total_commitment_pct
         
         # Opponent aggression this street
         opp_total_actions = opp_seq.checked_count + opp_seq.raised_count
@@ -327,10 +328,10 @@ class LiveFeatureDebugger:
     
     def get_current_street_strategic_actions(self, schema: PokerFeatureSchema) -> str:
         """
-        Get strategic actions performed on the current street (hero only).
+        Get strategic actions performed on the current street (self only).
         Shows: check-raise, donk bet, 3-bet, float bet, probe bet [all monotonic]
         """
-        seq = schema.hero_current_sequence
+        seq = schema.self_current_sequence
         actions = []
         
         # Check each strategic action (they're all boolean/monotonic)
@@ -372,30 +373,155 @@ class LiveFeatureDebugger:
     def should_log_detailed_features(self, schema: PokerFeatureSchema, action: int, amount: Optional[int]) -> bool:
         """
         Determine if this situation warrants detailed feature logging.
-        Returns True for interesting/complex decisions.
+        Returns False to disable all detailed logging.
         """
-        # Always log for significant bets/raises
-        if action == 2 and amount:  # Bet/raise
-            stack = schema.hero_current_stack
-            pot_ratio = amount / max(schema.current_additional.effective_spr * 50, 1)  # Rough pot size estimate
-            if pot_ratio > 0.75:  # Large bet (>75% pot)
-                return True
+        return False
+
+    def format_exhaustive_dump(self, schema: PokerFeatureSchema, player_name: str = "P0", context: dict = None) -> str:
+        """
+        Formats a complete dump of EVERY feature in the schema, highlighting non-zero values.
+        Designed for deep debugging to verify all feature calculations.
+        Shows all 614+ features with their actual values - both zero and non-zero.
+        """
+        from dataclasses import fields
+        lines = [f"\n{'='*25} EXHAUSTIVE FEATURE DUMP for {player_name} {'='*25}"]
         
-        # Log for close equity decisions
-        equity = schema.current_additional.equity_vs_range
-        if 0.4 <= equity <= 0.6:  # Close to 50-50
-            return True
+        # Add context information if provided
+        if context:
+            lines.append(f"Episode: {context.get('episode', 'N/A')} | Hand: {context.get('hand', 'N/A')} | Street: {context.get('street', 'N/A')} (Stage {context.get('stage', 'N/A')})")
+            lines.append(f"Pot: {context.get('pot', 'N/A')} | Stacks: {context.get('stacks', 'N/A')}")
+            lines.append(f"Scenario: {context.get('scenario', 'N/A')}")
+            lines.append(f"{'='*75}")
         
-        # Log for significant deltas
-        deltas = schema.current_additional
-        if abs(deltas.equity_delta) > 0.1 or abs(deltas.spr_delta) > 1.0:
-            return True
+        total_feature_count = len(schema.to_vector())
+        lines.append(f"Total features in schema: {total_feature_count}")
         
-        # Log for high commitment situations
-        if schema.hero_current_stack.total_commitment > 0.5:  # >50% of stack committed
+        feature_count = 0
+        
+        for group_field in fields(schema):
+            group_name = group_field.name
+            group_obj = getattr(schema, group_name)
+            
+            if not hasattr(group_obj, '__dataclass_fields__'): 
+                continue
+
+            group_lines = []
+            group_feature_count = 0
+            has_active = False
+
+            for feature_field in fields(group_obj):
+                feature_name = feature_field.name
+                value = getattr(group_obj, feature_name)
+                
+                if hasattr(value, '__dataclass_fields__'): # Nested dataclass
+                    nested_lines = []
+                    nested_count = len(fields(value))
+                    nested_has_active = False
+                    for nested_field in fields(value):
+                        nested_val = getattr(value, nested_field.name)
+                        marker = " ★" if nested_val != 0.0 else ""
+                        if marker: nested_has_active = True
+                        nested_lines.append(f"      {nested_field.name}: {nested_val:.6f}{marker}")
+                    
+                    group_lines.append(f"    {feature_name}: ({nested_count} features)")
+                    group_lines.extend(nested_lines)
+                    group_feature_count += nested_count
+                    if nested_has_active: has_active = True
+                else: # Simple feature
+                    group_feature_count += 1
+                    marker = " ★" if value != 0.0 else ""
+                    if marker: has_active = True
+                    group_lines.append(f"    {feature_name}: {value:.6f}{marker}")
+
+            active_indicator = " (HAS ACTIVE)" if has_active else " (all zeros)"
+            lines.append(f"\n--- {group_name} ({group_feature_count} features){active_indicator} ---")
+            lines.extend(group_lines)
+            feature_count += group_feature_count
+
+        lines.append(f"\n{'='*25} SUMMARY {'='*25}")
+        lines.append(f"Total features processed: {feature_count}")
+        lines.append(f"Features marked with ★ are non-zero (active)")
+        lines.append(f"{'=' * (59 + len(player_name))}\n")
+        
+        return '\n'.join(lines)
+
+    def is_interesting_scenario(self, schema: PokerFeatureSchema, game_state) -> bool:
+        """
+        Detect if the current game situation is interesting enough for an exhaustive dump.
+        Look for check-raises and 3-bets ONLY on the River.
+        """
+        # Check if we're on the River
+        if schema.current_stage.is_river != 1.0:
+            return False
+        
+        # Look for strategic actions in current street (River only)
+        self_seq = schema.self_current_sequence
+        opp_seq = schema.opponent_current_sequence
+        
+        # Trigger only on River check-raises and 3-bets
+        if (self_seq.did_3bet == 1.0 or opp_seq.did_3bet == 1.0 or
+            self_seq.did_check_raise == 1.0 or opp_seq.did_check_raise == 1.0):
             return True
         
         return False
+    
+    def describe_scenario(self, schema: PokerFeatureSchema, game_state) -> str:
+        """
+        Create a descriptive string for the interesting scenario.
+        """
+        stage_names = ['Preflop', 'Flop', 'Turn', 'River']
+        stage = game_state.stage
+        street = stage_names[min(stage, 3)]
+        
+        # Check for strategic actions
+        self_actions = []
+        opp_actions = []
+        
+        self_seq = schema.self_current_sequence
+        opp_seq = schema.opponent_current_sequence
+        
+        if self_seq.did_3bet == 1.0:
+            self_actions.append("3bet")
+        if self_seq.did_float_bet == 1.0:
+            self_actions.append("float")
+        if self_seq.did_check_raise == 1.0:
+            self_actions.append("checkraise")
+        if self_seq.did_probe_bet == 1.0:
+            self_actions.append("probe")
+        
+        if opp_seq.did_3bet == 1.0:
+            opp_actions.append("3bet")
+        if opp_seq.did_float_bet == 1.0:
+            opp_actions.append("float")
+        if opp_seq.did_check_raise == 1.0:
+            opp_actions.append("checkraise")
+        if opp_seq.did_probe_bet == 1.0:
+            opp_actions.append("probe")
+        
+        # Build description
+        parts = [street]
+        
+        if self_actions:
+            parts.append(f"Self-{'+'.join(self_actions)}")
+        if opp_actions:
+            parts.append(f"Opp-{'+'.join(opp_actions)}")
+        
+        # Add commitment info if high
+        commitment = schema.self_current_stack.total_commitment_pct
+        if commitment > 0.5:
+            parts.append(f"HighCommit-{commitment:.1%}")
+        
+        # Add SPR info if low
+        spr = schema.current_additional.effective_spr
+        if spr < 2.0:
+            parts.append(f"LowSPR-{spr:.1f}")
+        
+        # Add equity if close
+        equity = schema.current_additional.equity_vs_range
+        if 0.4 <= equity <= 0.6:
+            parts.append(f"CloseEquity-{equity:.1%}")
+        
+        return "_".join(parts)
 
 
 # Convenience function for quick integration
@@ -436,3 +562,13 @@ def format_features_for_hand_log(schema: PokerFeatureSchema, player_name: str = 
     else:
         # Concise single-line format
         return debugger.format_concise_features(schema, player_name)
+
+
+def dump_all_features_to_log(schema: PokerFeatureSchema, player_name: str = "P0", context: dict = None) -> str:
+    """
+    Convenience function to generate the exhaustive feature dump for logging.
+    Use this to verify that ALL 614 features are working correctly.
+    """
+    debugger = LiveFeatureDebugger()
+    return debugger.format_exhaustive_dump(schema, player_name, context)
+    

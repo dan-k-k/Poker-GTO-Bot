@@ -147,6 +147,21 @@ class HandEventIdentifier:
         # === BET SIZING ANALYSIS ===
         events.update(self._identify_bet_sizing_events(player_id))
         
+        # === GENERAL STREET ACTION TRACKING ===
+        # Add flags for StatsTracker to track per-street fold rates
+        if preflop_actions or flop_actions or turn_actions or river_actions:
+            events['had_street_action'] = True
+            events['preflop_action'] = bool(preflop_actions)
+            events['flop_action'] = bool(flop_actions)
+            events['turn_action'] = bool(turn_actions)
+            events['river_action'] = bool(river_actions)
+            
+            # Track folding on each street
+            events['folded_preflop'] = any(a.action_type == ActionType.FOLD for a in preflop_actions)
+            events['folded_flop'] = any(a.action_type == ActionType.FOLD for a in flop_actions)
+            events['folded_turn'] = any(a.action_type == ActionType.FOLD for a in turn_actions)
+            events['folded_river'] = any(a.action_type == ActionType.FOLD for a in river_actions)
+        
         return events
     
     def _identify_preflop_events(self, player_id: int, preflop_actions: List[RawAction]) -> Dict[str, Any]:
@@ -312,6 +327,17 @@ class HandEventIdentifier:
                 folded = any(a.action_type == ActionType.FOLD for a in street_actions)
                 events[f'fold_to_cbet_{street_name}_opportunity'] = True
                 events[f'fold_to_cbet_{street_name}_action'] = folded
+        
+        # CRITICAL FIX: Add general postflop aggression tracking
+        all_postflop_actions = flop_actions + turn_actions + river_actions
+        if all_postflop_actions:
+            events['had_postflop_action'] = True
+            # Check if player was aggressive on any postflop street
+            was_aggressive = any(a.action_type in [ActionType.BET, ActionType.RAISE] for a in all_postflop_actions)
+            events['was_aggressive_postflop'] = was_aggressive
+            # Check if player folded on any postflop street
+            folded_postflop = any(a.action_type == ActionType.FOLD for a in all_postflop_actions)
+            events['folded_postflop'] = folded_postflop
         
         return events
     

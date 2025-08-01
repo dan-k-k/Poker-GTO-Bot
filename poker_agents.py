@@ -13,7 +13,7 @@ class GTOPokerNet(nn.Module):
     Standard GTO poker network architecture.
     Used by both training and inference.
     """
-    def __init__(self, input_size: int = 611):  # Updated: Full feature schema with delta features and equity vs range
+    def __init__(self, input_size: int = 694):  # Updated: Moved is_facing features to additional (self-only)
         super().__init__()
         
         # Shared layers
@@ -142,11 +142,11 @@ class GTOAgent(PokerAgent):
         pot = state['pot']
         stack = state['stacks'][self.seat_id]
         
-        # Map [0,1] output to reasonable bet sizes
-        bet_fraction = sizing_output
-        
-        # 0.0 -> 0.5x pot, 1.0 -> 2x pot
-        pot_multiple = 0.5 + bet_fraction * 1.5
+        # This maps the [0, 1] output to a [0.05, 2.2] pot multiple
+        MIN_BET_FRAC = 0.05
+        MAX_BET_FRAC = 2.2
+        pot_multiple = MIN_BET_FRAC + (MAX_BET_FRAC - MIN_BET_FRAC) * (sizing_output ** 2)
+
         target_bet = int(pot * pot_multiple)
         
         # Ensure legal bet size

@@ -18,7 +18,7 @@ from poker_agents import GTOPokerNet
 try:
     # Relative imports for package usage
     from .data_collector import DataCollector
-    from .training_utils import TrainingUtils
+    from .training_utils import TrainingUtils, TrainingWatchdog
     from .action_selector import ActionSelector
     from .network_trainer import NetworkTrainer
     from .evaluator import Evaluator
@@ -27,7 +27,7 @@ try:
 except ImportError:
     # Direct imports for script execution
     from data_collector import DataCollector
-    from training_utils import TrainingUtils
+    from training_utils import TrainingUtils, TrainingWatchdog
     from action_selector import ActionSelector
     from network_trainer import NetworkTrainer
     from evaluator import Evaluator
@@ -45,7 +45,8 @@ class NFSPTrainer:
     
     def __init__(self, num_players=2, mean_stack_bb=100, big_blind_chips=2, 
                  session_length=20, std_stack_bb=35, min_stack_bb_percent=0.15,
-                 enable_stack_depth_simulation=True, loss_weight_config='default'):
+                 enable_stack_depth_simulation=True, loss_weight_config='default',
+                 profit_reward_weight=0.7, equity_reward_weight=0.3):
         
         # 💡 --- START: Centralized Configuration ---
         
@@ -76,8 +77,8 @@ class NFSPTrainer:
         self.feature_extractor = FeatureExtractor(num_players=self.num_players)
         
         # 4. Initialize Networks
-        self.avg_pytorch_net = GTOPokerNet(input_size=611)
-        self.br_pytorch_net = GTOPokerNet(input_size=611)
+        self.avg_pytorch_net = GTOPokerNet(input_size=694)
+        self.br_pytorch_net = GTOPokerNet(input_size=694)
         
         # 5. Initialize Simulator with derived values
         self.stack_depth_simulator = None
@@ -92,6 +93,10 @@ class NFSPTrainer:
             )
         
         # 💡 --- END: Centralized Configuration ---
+        
+        # 🎯 Reward Shaping Weights - Tunable hyperparameters
+        self.profit_reward_weight = profit_reward_weight
+        self.equity_reward_weight = equity_reward_weight
         
         # Initialize comprehensive stats tracker for opponent modeling
         stats_path = os.path.join('training_output', 'nfsp_training_stats.json')
@@ -112,7 +117,8 @@ class NFSPTrainer:
         self.br_stat_history = []
         
         # Initialize modular components
-        self.data_collector = DataCollector(self.env, self.feature_extractor, self.stack_depth_simulator, self.stats_tracker)
+        self.data_collector = DataCollector(self.env, self.feature_extractor, self.stack_depth_simulator, self.stats_tracker,
+                                          profit_weight=self.profit_reward_weight, equity_weight=self.equity_reward_weight)
         self.action_selector = ActionSelector(self.env, self.avg_pytorch_net, self.br_pytorch_net)
         self.network_trainer = NetworkTrainer(self.avg_pytorch_net, self.br_pytorch_net)
         self.evaluator = Evaluator(self.env, self.feature_extractor, self.action_selector)
@@ -129,6 +135,10 @@ class NFSPTrainer:
             weights = self.network_trainer.get_current_loss_weights()
             print(f"   AS: action={weights['as']['action']}, bet={weights['as']['bet']}, entropy={weights['as']['entropy_start']}→{weights['as']['entropy_end']}")
             print(f"   BR: policy={weights['br']['policy']}, value={weights['br']['value']}, entropy={weights['br']['entropy']}, bet={weights['br']['bet']}")
+        
+        # Display reward shaping weights
+        print(f"🎯 Reward shaping weights")
+        print(f"   Profit weight: {self.profit_reward_weight}; Equity weight: {self.equity_reward_weight}")
         
         # Training state for graceful exit
         self.training_interrupted = False
@@ -203,244 +213,246 @@ class NFSPTrainer:
         for episode in range(start_episode, episodes):
             self.current_episode = episode
             
-            # ================== START: EPISODE RESET FIX ==================
-            #
-            # EPISODE RESET LOGIC: Ensure every episode starts with a fresh, playable scenario.
-            # This clears the board from the previous episode's results and prevents infinite loops.
-            #
-            print(f"\n--- Episode {episode+1}/{episodes}: Resetting Scenario ---")
-            if self.stack_depth_simulator:
-                # Tell the simulator to start a new session with new asymmetric stacks
-                new_stacks = self.stack_depth_simulator.reset_session(reason="new_episode")
-                self.env.reset(preserve_stacks=False)
-                self.env.state.stacks = list(new_stacks)
-                print(f"🔄 Fresh stacks for episode: {new_stacks}")
-            else:
-                # If not using the simulator, just do a standard reset.
-                self.env.reset(preserve_stacks=False)
-                print(f"🔄 Standard reset for episode")
-            #
-            # =================== END: EPISODE RESET FIX ===================
-            
-            # Reset session tracking for new episode
-            self.data_collector.reset_session_tracking()
-            
-            # Update episode in all components
-            self.action_selector.set_current_episode(episode)
-            self.network_trainer.set_current_episode(episode)
-            
-            # Check for interruption
-            if self.training_interrupted:
-                print(f"\n💾 Saving progress and exiting gracefully...")
-                TrainingUtils.save_training_state(self)
-                TrainingUtils.save_models(self.avg_pytorch_net, self.br_pytorch_net, self.current_episode)
-                print(f"🛑 Training stopped at episode {episode}. \nResume (full power) with: python trainingL1/train_L1.py\nResume (efficiency core macOS) with: taskpolicy -b python trainingL1/train_L1.py")
-                return
-            
-            print(f"\n{'='*60}")
-            print(f"Episode {episode+1}/{episodes}")
-            
-            # Get training decision and phase info
-            train_best_response, decision_reason = self.evaluator.should_train_best_response(
-                episode, return_reason=True
-            )
-            
-            # Show current training phase clearly
-            self._print_training_phase_info(episode, train_best_response, decision_reason)
-            
-            if not train_best_response:  # Train Average Strategy
+            # Wrap each episode with watchdog to detect freezes/infinite loops
+            with TrainingWatchdog(seconds=60):
+                    # ================== START: EPISODE RESET FIX ==================
+                #
+                # EPISODE RESET LOGIC: Ensure every episode starts with a fresh, playable scenario.
+                # This clears the board from the previous episode's results and prevents infinite loops.
+                #
+                print(f"\n--- Episode {episode+1}/{episodes}: Resetting Scenario ---")
+                if self.stack_depth_simulator:
+                    # Tell the simulator to start a new session with new asymmetric stacks
+                    new_stacks = self.stack_depth_simulator.reset_session(reason="new_episode")
+                    self.env.reset(preserve_stacks=False)
+                    self.env.state.stacks = list(new_stacks)
+                    # print(f"🔄 Fresh stacks for episode: {new_stacks}")
+                else:
+                    # If not using the simulator, just do a standard reset.
+                    self.env.reset(preserve_stacks=False)
+                    print(f"DEBUG: 🔄 Standard reset for episode (no stack depth simulation)")
+                #
+                # =================== END: EPISODE RESET FIX ===================
                 
-                # Define agent IDs for stats tracking
-                as_agent_id = "average_strategy_v1"
-                br_agent_id = "best_response_v1"
+                # Reset session tracking for new episode
+                self.data_collector.reset_session_tracking()
                 
-                # AS is training (P0), BR is opponent (P1) - get BR's stats
-                opponent_stats = self.stats_tracker.get_player_percentages(br_agent_id)
+                # Update episode in all components
+                self.action_selector.set_current_episode(episode)
+                self.network_trainer.set_current_episode(episode)
                 
-                # Create player map: P0=AS (training), P1=BR (opponent)
-                player_map = {0: as_agent_id, 1: br_agent_id}
+                # Check for interruption
+                if self.training_interrupted:
+                    print(f"\n💾 Saving progress and exiting gracefully...")
+                    TrainingUtils.save_training_state(self)
+                    TrainingUtils.save_models(self.avg_pytorch_net, self.br_pytorch_net, self.current_episode)
+                    print(f"🛑 Training stopped at episode {episode}. \nResume (full power) with: python trainingL1/train_L1.py\nResume (efficiency core macOS) with: taskpolicy -b python trainingL1/train_L1.py")
+                    return
                 
-                # Train average strategy network (GTO approximation)
-                experiences, win_rate = self.data_collector.collect_average_strategy_data(
-                    hands_per_episode, self.action_selector, self.current_episode, opponent_stats, player_map
+                print(f"\n{'='*60}")
+                print(f"Episode {episode+1}/{episodes}")
+                
+                # Get training decision and phase info
+                train_best_response, decision_reason = self.evaluator.should_train_best_response(
+                    episode, return_reason=True
                 )
                 
-                if len(experiences) > 32:  # Reduced threshold for faster startup
-                    show_debug = (episode % 5 == 0)  # Show debug every 5th episode
-                    avg_loss = self.network_trainer.train_average_strategy(show_debug=show_debug)
-                    print(f"✅ AS Training Complete: Win Rate: {win_rate:.3f} | Loss: {avg_loss:.6f}")
-                    
-                    # Track loss for plotting
-                    self.avg_strategy_losses.append(avg_loss)
-                    self.best_response_losses.append(None)  # No BR training this episode
-                    
-                    # Track AS training performance for adaptive decisions
-                    self.as_training_losses.append(avg_loss)
-                    
-                    # Track chip performance (more meaningful than win rate)
-                    episode_chip_performance = sum(exp['reward'] for exp in experiences) * 200  # Convert back to chips
-                    self.as_chip_performance.append(episode_chip_performance / len(experiences))  # Avg per hand
-                else:
-                    self.avg_strategy_losses.append(None)
-                    self.best_response_losses.append(None)
-                    print(f"⏸️  AS Training Skipped: Not enough experiences ({len(experiences)} < 32)")
-                    
-                    # No training occurred, track placeholder values
-                    if len(experiences) > 0:
-                        episode_chip_performance = sum(exp['reward'] for exp in experiences) * 200
-                        self.as_chip_performance.append(episode_chip_performance / len(experiences))
-                        self.as_training_losses.append(0.0)  # No training loss
+                # Show current training phase clearly
+                self._print_training_phase_info(episode, train_best_response, decision_reason)
                 
-                # Process experiences for NFSP
-                self._process_as_experiences(experiences)
+                if not train_best_response:  # Train Average Strategy
                     
-            else:  # Train Best Response
-                # BR Training - show validation metrics
-                
-                # Define agent IDs for stats tracking
-                as_agent_id = "average_strategy_v1"
-                br_agent_id = "best_response_v1"
-                
-                # BR is training (P0), AS is opponent (P1) - get AS's stats
-                opponent_stats = self.stats_tracker.get_player_percentages(as_agent_id)
-                
-                # Create player map: P0=BR (training), P1=AS (opponent)
-                player_map = {0: br_agent_id, 1: as_agent_id}
-                
-                # Train best response network (exploiter)
-                experiences, win_rate = self.data_collector.collect_best_response_data(
-                    hands_per_episode, self.action_selector, self.current_episode, opponent_stats, player_map
-                )
-                
-                if len(experiences) > 32:  # Reduced threshold for faster startup
-                    show_debug = (episode % 5 == 0)  # Show debug every 5th episode
-                    br_loss = self.network_trainer.train_best_response(show_debug=show_debug)
-                    
-                    # Calculate BR validation loss for plateau detection
-                    br_val_loss = self.network_trainer.calculate_br_validation_loss()
-                    self.network_trainer.add_br_validation_loss(br_val_loss)
-                    
-                    # Reset baseline when switching to BR training (new AS to exploit)
-                    if self.br_consecutive_training == 1:  # First BR episode after AS training
-                        self.network_trainer.set_br_baseline_loss(br_val_loss)
-                        print(f"   🎯 New BR baseline set: {br_val_loss:.6f} (facing updated AS)")
-                    
-                    # Check if BR validation loss has plateaued (stuck in local minima)
-                    if self.network_trainer.should_mutate_br():
-                        self.network_trainer.mutate_br_strategy()
-                        self.network_trainer.set_last_mutation_episode(episode)
-                        print("🧬 BR strategy mutation applied - validation loss plateaued")
-                    
-                    print(f"✅ BR Training Complete: Win Rate: {win_rate:.3f} | Loss: {br_loss:.6f} | Val Loss: {br_val_loss:.6f}")
-                    
-                    # Track loss for plotting
-                    self.best_response_losses.append(br_loss)
-                    self.avg_strategy_losses.append(None)  # No avg training this episode
-                    
-                    # Update BR consecutive training counter
-                    self.br_consecutive_training += 1
-                else:
-                    self.avg_strategy_losses.append(None)
-                    self.best_response_losses.append(None)
-                    print(f"⏸️  BR Training Skipped: Not enough experiences ({len(experiences)} < 32)")
-                
-                # Process experiences for NFSP
-                self._process_br_experiences(experiences)
-            
-            # Always track episode number
-            self.episode_numbers.append(episode)
-            
-            # Print episode session summary
-            self.data_collector.print_episode_summary()
-            
-            # Track episodes for StatsTracker-based reporting
-            if not train_best_response:
-                self.as_episodes_since_last_report += 1
-                # Set baseline at start of new AS reporting period
-                if self.as_episodes_since_last_report == 1:
+                    # Define agent IDs for stats tracking
                     as_agent_id = "average_strategy_v1"
-                    self.as_baseline_stats = self.stats_tracker.get_player_percentages(as_agent_id)
-            else:
-                self.br_episodes_since_last_report += 1
-                # Set baseline at start of new BR reporting period
-                if self.br_episodes_since_last_report == 1:
                     br_agent_id = "best_response_v1"
-                    self.br_baseline_stats = self.stats_tracker.get_player_percentages(br_agent_id)
-            
-            # Print AS diagnostics every 12 AS episodes showing period changes
-            if self.as_episodes_since_last_report >= 12:
-                print("\n" + "="*50)
-                print(f"  AS AGENT DIAGNOSTICS (Last {self.as_episodes_since_last_report} AS Episodes)")
-                print("="*50)
-                as_agent_id = "average_strategy_v1"
-                current_stats = self.stats_tracker.get_player_percentages(as_agent_id)
-                print(self._format_period_diagnostic(current_stats, self.as_baseline_stats, self.as_episodes_since_last_report))
-                print("="*50)
-                
-                # Save stats for plotting
-                stats_snapshot = current_stats.copy()
-                stats_snapshot['episode'] = episode
-                self.as_stat_history.append(stats_snapshot)
-                
-                # Generate real-time plot update
-                TrainingUtils.plot_agent_stats_evolution(self)
-                
-                self.as_episodes_since_last_report = 0
-                self.as_baseline_stats = None
-            
-            # Print BR diagnostics every 6 BR episodes showing period changes
-            if self.br_episodes_since_last_report >= 6:
-                print("\n" + "="*50)
-                print(f"  BR AGENT DIAGNOSTICS (Last {self.br_episodes_since_last_report} BR Episodes)")
-                print("="*50)
-                br_agent_id = "best_response_v1"
-                current_stats = self.stats_tracker.get_player_percentages(br_agent_id)
-                print(self._format_period_diagnostic(current_stats, self.br_baseline_stats, self.br_episodes_since_last_report))
-                print("="*50)
-                
-                # Save stats for plotting
-                stats_snapshot = current_stats.copy()
-                stats_snapshot['episode'] = episode
-                self.br_stat_history.append(stats_snapshot)
-                
-                # Generate real-time plot update
-                TrainingUtils.plot_agent_stats_evolution(self)
-                
-                self.br_episodes_since_last_report = 0
-                self.br_baseline_stats = None
-                if episode % 50 == 0:  # Additional stats less frequently                    
-                    # Print stack depth report if enabled
-                    if self.stack_depth_simulator:
-                        self.stack_depth_simulator.print_stack_depth_report()
-            
-            # Periodically update the average network with accumulated strategies (skip episode 0)
-            if episode % self.avg_network_update_freq == 0 and episode > 0:
-                self.network_trainer.update_average_network()
-                
-            # Measure exploitability and validation loss (skip episode 0)
-            if episode % 20 == 0 and episode > 0:
-                exploitability = self.evaluator.measure_gto_exploitability()
-                self.exploitability_scores.append(exploitability)
-                print(f"📊 Exploitability Score: {exploitability:.4f}")
-                
-                # Exploitability-based early stopping
-                if episode >= self.min_episodes_before_stopping:
-                    if exploitability < self.best_exploitability:
-                        self.best_exploitability = exploitability
-                        self.patience_counter = 0
-                        print(f"✅ New best exploitability: {exploitability:.6f}")
-                    else:
-                        self.patience_counter += 1
-                        print(f"⏳ Patience counter: {self.patience_counter}/{self.patience} (best: {self.best_exploitability:.6f})")
+                    
+                    # AS is training (P0), BR is opponent (P1) - get BR's stats
+                    opponent_stats = self.stats_tracker.get_player_percentages(br_agent_id)
+                    
+                    # Create player map: P0=AS (training), P1=BR (opponent)
+                    player_map = {0: as_agent_id, 1: br_agent_id}
+                    
+                    # Train average strategy network (GTO approximation)
+                    experiences, win_rate = self.data_collector.collect_average_strategy_data(
+                        hands_per_episode, self.action_selector, self.current_episode, opponent_stats, player_map
+                    )
+                    
+                    if len(experiences) > 32:  # Reduced threshold for faster startup
+                        show_debug = (episode % 5 == 0)  # Show debug every 5th episode
+                        avg_loss = self.network_trainer.train_average_strategy(show_debug=show_debug)
+                        print(f"✅ AS Training Complete: Win Rate: {win_rate:.3f} | Loss: {avg_loss:.6f}")
                         
-                        if self.patience_counter >= self.patience:
-                            print(f"🛑 Early stopping: No exploitability improvement for {self.patience} episodes")
-                            break
+                        # Track loss for plotting
+                        self.avg_strategy_losses.append(avg_loss)
+                        self.best_response_losses.append(None)  # No BR training this episode
+                        
+                        # Track AS training performance for adaptive decisions
+                        self.as_training_losses.append(avg_loss)
+                        
+                        # Track chip performance (more meaningful than win rate)
+                        episode_chip_performance = sum(exp['reward'] for exp in experiences) * 200  # Convert back to chips
+                        self.as_chip_performance.append(episode_chip_performance / len(experiences))  # Avg per hand
+                    else:
+                        self.avg_strategy_losses.append(None)
+                        self.best_response_losses.append(None)
+                        print(f"⏸️  AS Training Skipped: Not enough experiences ({len(experiences)} < 32)")
+                        
+                        # No training occurred, track placeholder values
+                        if len(experiences) > 0:
+                            episode_chip_performance = sum(exp['reward'] for exp in experiences) * 200
+                            self.as_chip_performance.append(episode_chip_performance / len(experiences))
+                            self.as_training_losses.append(0.0)  # No training loss
+                    
+                    # Process experiences for NFSP
+                    self._process_as_experiences(experiences)
+                        
+                else:  # Train Best Response
+                    # BR Training - show validation metrics
+                    
+                    # Define agent IDs for stats tracking
+                    as_agent_id = "average_strategy_v1"
+                    br_agent_id = "best_response_v1"
+                    
+                    # BR is training (P0), AS is opponent (P1) - get AS's stats
+                    opponent_stats = self.stats_tracker.get_player_percentages(as_agent_id)
+                    
+                    # Create player map: P0=BR (training), P1=AS (opponent)
+                    player_map = {0: br_agent_id, 1: as_agent_id}
+                    
+                    # Train best response network (exploiter)
+                    experiences, win_rate = self.data_collector.collect_best_response_data(
+                        hands_per_episode, self.action_selector, self.current_episode, opponent_stats, player_map
+                    )
+                    
+                    if len(experiences) > 32:  # Reduced threshold for faster startup
+                        show_debug = (episode % 5 == 0)  # Show debug every 5th episode
+                        br_loss = self.network_trainer.train_best_response(show_debug=show_debug)
+                        
+                        # Calculate BR validation loss for plateau detection
+                        br_val_loss = self.network_trainer.calculate_br_validation_loss()
+                        self.network_trainer.add_br_validation_loss(br_val_loss)
+                        
+                        # Reset baseline when switching to BR training (new AS to exploit)
+                        if self.br_consecutive_training == 1:  # First BR episode after AS training
+                            self.network_trainer.set_br_baseline_loss(br_val_loss)
+                            print(f"   🎯 New BR baseline set: {br_val_loss:.6f} (facing updated AS)")
+                        
+                        # Check if BR validation loss has plateaued (stuck in local minima)
+                        if self.network_trainer.should_mutate_br():
+                            self.network_trainer.mutate_br_strategy()
+                            self.network_trainer.set_last_mutation_episode(episode)
+                            print("🧬 BR strategy mutation applied - validation loss plateaued")
+                        
+                        print(f"✅ BR Training Complete: Win Rate: {win_rate:.3f} | Loss: {br_loss:.6f} | Val Loss: {br_val_loss:.6f}")
+                        
+                        # Track loss for plotting
+                        self.best_response_losses.append(br_loss)
+                        self.avg_strategy_losses.append(None)  # No avg training this episode
+                        
+                        # Update BR consecutive training counter
+                        self.br_consecutive_training += 1
+                    else:
+                        self.avg_strategy_losses.append(None)
+                        self.best_response_losses.append(None)
+                        print(f"⏸️  BR Training Skipped: Not enough experiences ({len(experiences)} < 32)")
+                    
+                    # Process experiences for NFSP
+                    self._process_br_experiences(experiences)
                 
-                # Optional: Still calculate AS validation loss for monitoring
-                if len(self.network_trainer.as_validation_buffer) > 100:
-                    val_loss = self.network_trainer.calculate_as_validation_loss()
-                    print(f"  AS Validation Loss: {val_loss:.6f} (monitoring only)")
+                # Always track episode number
+                self.episode_numbers.append(episode)
+                
+                # Print episode session summary
+                self.data_collector.print_episode_summary()
+                
+                # Track episodes for StatsTracker-based reporting
+                if not train_best_response:
+                    self.as_episodes_since_last_report += 1
+                    # Set baseline at start of new AS reporting period
+                    if self.as_episodes_since_last_report == 1:
+                        as_agent_id = "average_strategy_v1"
+                        self.as_baseline_stats = self.stats_tracker.get_player_percentages(as_agent_id)
+                else:
+                    self.br_episodes_since_last_report += 1
+                    # Set baseline at start of new BR reporting period
+                    if self.br_episodes_since_last_report == 1:
+                        br_agent_id = "best_response_v1"
+                        self.br_baseline_stats = self.stats_tracker.get_player_percentages(br_agent_id)
+                
+                # Print AS diagnostics every 12 AS episodes showing period changes
+                if self.as_episodes_since_last_report >= 12:
+                    print("\n" + "="*50)
+                    print(f"  AS AGENT DIAGNOSTICS (Last {self.as_episodes_since_last_report} AS Episodes)")
+                    print("="*50)
+                    as_agent_id = "average_strategy_v1"
+                    current_stats = self.stats_tracker.get_player_percentages(as_agent_id)
+                    print(self._format_period_diagnostic(current_stats, self.as_baseline_stats, self.as_episodes_since_last_report))
+                    print("="*50)
+                    
+                    # Save stats for plotting
+                    stats_snapshot = current_stats.copy()
+                    stats_snapshot['episode'] = episode
+                    self.as_stat_history.append(stats_snapshot)
+                    
+                    # Generate real-time plot update
+                    TrainingUtils.plot_agent_stats_evolution(self)
+                    
+                    self.as_episodes_since_last_report = 0
+                    self.as_baseline_stats = None
+                
+                # Print BR diagnostics every 6 BR episodes showing period changes
+                if self.br_episodes_since_last_report >= 6:
+                    print("\n" + "="*50)
+                    print(f"  BR AGENT DIAGNOSTICS (Last {self.br_episodes_since_last_report} BR Episodes)")
+                    print("="*50)
+                    br_agent_id = "best_response_v1"
+                    current_stats = self.stats_tracker.get_player_percentages(br_agent_id)
+                    print(self._format_period_diagnostic(current_stats, self.br_baseline_stats, self.br_episodes_since_last_report))
+                    print("="*50)
+                    
+                    # Save stats for plotting
+                    stats_snapshot = current_stats.copy()
+                    stats_snapshot['episode'] = episode
+                    self.br_stat_history.append(stats_snapshot)
+                    
+                    # Generate real-time plot update
+                    TrainingUtils.plot_agent_stats_evolution(self)
+                    
+                    self.br_episodes_since_last_report = 0
+                    self.br_baseline_stats = None
+                    if episode % 50 == 0:  # Additional stats less frequently                    
+                        # Print stack depth report if enabled
+                        if self.stack_depth_simulator:
+                            self.stack_depth_simulator.print_stack_depth_report()
+                
+                # Periodically update the average network with accumulated strategies (skip episode 0)
+                if episode % self.avg_network_update_freq == 0 and episode > 0:
+                    self.network_trainer.update_average_network()
+                    
+                # Measure exploitability and validation loss (skip episode 0)
+                if episode % 20 == 0 and episode > 0:
+                    exploitability = self.evaluator.measure_gto_exploitability()
+                    self.exploitability_scores.append(exploitability)
+                    print(f"📊 Exploitability Score: {exploitability:.4f}")
+                    
+                    # Exploitability-based early stopping
+                    if episode >= self.min_episodes_before_stopping:
+                        if exploitability < self.best_exploitability:
+                            self.best_exploitability = exploitability
+                            self.patience_counter = 0
+                            print(f"✅ New best exploitability: {exploitability:.6f}")
+                        else:
+                            self.patience_counter += 1
+                            print(f"⏳ Patience counter: {self.patience_counter}/{self.patience} (best: {self.best_exploitability:.6f})")
+                            
+                            if self.patience_counter >= self.patience:
+                                print(f"🛑 Early stopping: No exploitability improvement for {self.patience} episodes")
+                                break
+                    
+                    # Optional: Still calculate AS validation loss for monitoring
+                    if len(self.network_trainer.as_validation_buffer) > 100:
+                        val_loss = self.network_trainer.calculate_as_validation_loss()
+                        print(f"  AS Validation Loss: {val_loss:.6f} (monitoring only)")
                         
         print("\n🏆 GTO Training Completed!")
         TrainingUtils.save_models(self.avg_pytorch_net, self.br_pytorch_net, self.current_episode)

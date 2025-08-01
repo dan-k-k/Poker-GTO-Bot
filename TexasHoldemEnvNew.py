@@ -131,6 +131,9 @@ class TexasHoldemEnv:
             sb_pos = surviving_players[sb_idx]
             bb_pos = surviving_players[bb_idx]
         
+        # ✅ Store starting stacks before blinds are posted
+        initial_stacks = stacks.copy()
+        
         # 6) Post blinds
         sb_amount = min(self.small_blind, stacks[sb_pos])
         bb_amount = min(self.big_blind, stacks[bb_pos])
@@ -174,7 +177,8 @@ class TexasHoldemEnv:
             stacks=stacks,
             current_bets=current_bets,
             pot=pot,
-            starting_pot_this_round=0,
+            starting_pot_this_round=pot,  # ✅ FIX: Starting pot for preflop should be blinds total
+            starting_stacks_this_hand=initial_stacks,  # ✅ FIX: Starting stacks before blinds
             active=active,
             all_in=all_in,
             acted=[False] * self.num_players,

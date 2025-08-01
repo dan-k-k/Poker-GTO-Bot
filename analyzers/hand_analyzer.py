@@ -194,42 +194,62 @@ class HandAnalyzer:
     
     def _calculate_hand_strength(self, hole: List[int], community: List[int]) -> float:
         """
-        Calculate hand strength. Uses preflop lookup table for speed and accuracy,
-        Monte Carlo simulation for post-flop situations.
+        ✅ The single, authoritative method for calculating hand strength.
+        Uses preflop lookup table for speed and accuracy, Monte Carlo simulation for post-flop.
         """
-        # --- PART 1: PREFLOP (INSTANT LOOKUP) ---
+        # --- PREFLOP: Use the fast and accurate lookup table ---
         if len(community) == 0:
             return self._get_preflop_strength(hole)
         
-        # --- PART 2: POST-FLOP (EFFICIENT SIMULATION) ---
-        deck = [c for c in range(52) if c not in hole and c not in community]
+        # --- POST-FLOP: Use Monte Carlo simulation with caching ---
+        cache_key = tuple(sorted(hole + community))
+        if cache_key in self.cache:
+            return self.cache[cache_key]
+        
+        if len(hole) < 2:
+            return 0.5  # Default for invalid hands
+        
+        # Monte Carlo simulation
         wins = 0
-        num_sims = 250 
+        ties = 0
+        trials = 500  # Increased for better accuracy
         
-        for _ in range(num_sims):
-            sim_deck = deck[:]
-            random.shuffle(sim_deck)
+        # Create deck without known cards
+        known_cards = set(hole + community)
+        deck = [i for i in range(52) if i not in known_cards]
+        
+        for _ in range(trials):
+            # Deal random opponent hand
+            if len(deck) < 2:
+                break
+            opp_cards = random.sample(deck, 2)
+            remaining_deck = [c for c in deck if c not in opp_cards]
             
-            opp_hole = [sim_deck.pop(), sim_deck.pop()]
-            
-            # Complete the board to 5 cards
+            # Complete the board if needed
             cards_needed = 5 - len(community)
-            board_completion = sim_deck[:cards_needed]
-            final_board = community + board_completion
+            if cards_needed > 0 and len(remaining_deck) >= cards_needed:
+                board_completion = random.sample(remaining_deck, cards_needed)
+                final_board = community + board_completion
+            else:
+                final_board = community + [0] * cards_needed  # Pad if needed
             
-            my_hand = hole + final_board
-            opp_hand = opp_hole + final_board
+            # Evaluate hands
+            my_strength = self._evaluate_hand_strength(hole, final_board)
+            opp_strength = self._evaluate_hand_strength(opp_cards, final_board)
             
-            # Use HandEvaluator and compare tuples directly (Python handles this correctly)
-            my_best = HandEvaluator.best_hand_rank(my_hand)
-            opp_best = HandEvaluator.best_hand_rank(opp_hand)
-            
-            if my_best > opp_best:
+            if my_strength > opp_strength:
                 wins += 1
-            elif my_best == opp_best:
-                wins += 0.5
+            elif my_strength == opp_strength:
+                ties += 1
         
-        return wins / num_sims
+        if trials == 0:
+            strength = 0.5
+        else:
+            strength = (wins + ties * 0.5) / trials
+        
+        # Cache the result
+        self.cache[cache_key] = strength
+        return strength
     
     def _get_preflop_strength(self, hole: List[int]) -> float:
         """Get preflop hand strength from lookup table."""
@@ -356,6 +376,35 @@ class HandAnalyzer:
 
     
     # Equity calculation methods moved to CurrentStreetAnalyzer
+    
+    def _evaluate_hand_strength(self, hole_cards: List[int], board: List[int]) -> float:
+        """
+        Simplified hand strength evaluation for Monte Carlo simulation.
+        """
+        all_cards = hole_cards + board
+        if len(all_cards) < 5:
+            all_cards += [0] * (5 - len(all_cards))  # Pad with low cards
+        
+        # Convert to ranks for simple evaluation
+        ranks = [card // 4 for card in all_cards[:5]]
+        rank_counts = {}
+        for rank in ranks:
+            rank_counts[rank] = rank_counts.get(rank, 0) + 1
+        
+        # Simple hand ranking (higher is better)
+        counts = sorted(rank_counts.values(), reverse=True)
+        if counts[0] == 4:  # Four of a kind
+            return 7.0 + max(ranks)
+        elif counts[0] == 3 and counts[1] == 2:  # Full house
+            return 6.0 + max(ranks)
+        elif counts[0] == 3:  # Three of a kind
+            return 3.0 + max(ranks)
+        elif counts[0] == 2 and counts[1] == 2:  # Two pair
+            return 2.0 + max(ranks)
+        elif counts[0] == 2:  # One pair
+            return 1.0 + max(ranks)
+        else:  # High card
+            return max(ranks) / 13.0
     
     def clear_cache(self):
         """Clear the hand strength cache."""

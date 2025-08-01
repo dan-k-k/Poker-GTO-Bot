@@ -53,7 +53,7 @@ class RangePredictor:
         
         # Learning rate scheduler
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, mode='min', factor=0.5, patience=10, verbose=True
+            self.optimizer, mode='min', factor=0.5, patience=10
         )
         
         # Training history
@@ -256,14 +256,14 @@ class RangePredictor:
 def main():
     """Main training script."""
     parser = argparse.ArgumentParser(description='Train Range Prediction Network')
-    parser.add_argument('--data_file', type=str, default='trainingL1/range_training_data.jsonl',
+    parser.add_argument('--data_file', type=str, default='training_output/range_training_data.jsonl',
                         help='Path to training data file')
     parser.add_argument('--model_save_path', type=str, default='range_predictor/range_predictor.pt',
                         help='Path to save trained model')
     parser.add_argument('--batch_size', type=int, default=64, help='Batch size for training')
     parser.add_argument('--epochs', type=int, default=100, help='Number of training epochs')
     parser.add_argument('--learning_rate', type=float, default=0.001, help='Learning rate')
-    parser.add_argument('--feature_dim', type=int, default=184, help='Feature vector dimension')
+    parser.add_argument('--feature_dim', type=int, default=611, help='Feature vector dimension')
     parser.add_argument('--train_split', type=float, default=0.8, help='Training data split ratio')
     
     args = parser.parse_args()

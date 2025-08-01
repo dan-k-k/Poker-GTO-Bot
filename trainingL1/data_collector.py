@@ -9,12 +9,12 @@ from collections import deque
 
 try:
     from .equity_calculator import EquityCalculator, RangeConstructor
-    from .live_debugger import LiveFeatureDebugger, format_features_for_hand_log
+    from .live_feature_debugger import LiveFeatureDebugger, format_features_for_hand_log, dump_all_features_to_log
     from ..range_predictor.range_dataset import classify_hand_properties
     from ..analyzers.event_identifier import HandEventIdentifier, HandHistory, RawAction, ActionType, Street
 except ImportError:
     from equity_calculator import EquityCalculator, RangeConstructor
-    from live_debugger import LiveFeatureDebugger, format_features_for_hand_log
+    from trainingL1.live_feature_debugger import LiveFeatureDebugger, format_features_for_hand_log, dump_all_features_to_log
     import sys
     import os
     sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -28,11 +28,16 @@ class DataCollector:
     Handles game simulation and data collection for NFSP training.
     """
     
-    def __init__(self, env, feature_extractor, stack_depth_simulator=None, stats_tracker=None):
+    def __init__(self, env, feature_extractor, stack_depth_simulator=None, stats_tracker=None,
+                 profit_weight=0.2, equity_weight=0.8):
         self.env = env
         self.feature_extractor = feature_extractor
         self.stack_depth_simulator = stack_depth_simulator
         self.stats_tracker = stats_tracker
+        
+        # 🎯 Reward Shaping Weights - Configurable hyperparameters
+        self.profit_weight = profit_weight
+        self.equity_weight = equity_weight
         
         # Episode win tracking (across all sessions in an episode)
         self.episode_session_wins = {'player_0': 0, 'player_1': 0}
@@ -47,12 +52,18 @@ class DataCollector:
         self.opponent_action_history = []
         
         # Live feature debugger for hand history logging
-        self.live_debugger = LiveFeatureDebugger()
+        self.live_feature_debugger = LiveFeatureDebugger()
+        
+        # Track exhaustive dumps to prevent spam
+        self.exhaustive_dump_triggered = {}
         
         # Range training data collection
         self.range_data_file = 'training_output/range_training_data.jsonl'
         self.range_data_buffer = []
         self.range_data_batch_size = 100  # Write in batches for efficiency
+        
+        # Hand-level training buffer for before/after state collection
+        self.hand_training_buffer = []
         
         # HandEventIdentifier for clean statistical event detection
         self.event_identifier = HandEventIdentifier()
@@ -231,7 +242,7 @@ class DataCollector:
             hand_id=self.current_hand_id,
             players=[0, 1],
             starting_stacks=self.current_starting_stacks,
-            blinds=(50, 100),  # Default blinds - could be extracted from env
+            blinds=(self.env.small_blind, self.env.big_blind),
             dealer_position=self.current_dealer_position,
             hole_cards=hole_cards,
             community_cards=self.current_community_cards,
@@ -265,67 +276,11 @@ class DataCollector:
     
     def _sanitize_features_for_range_training(self, features: List[float]) -> List[float]:
         """
-        Programmatically remove features that depend on range predictions to avoid circular learning.
-        
-        The Range Predictor Network must not see features calculated using range predictions.
-        This method uses the schema to find exact feature positions - no hard-coded indices.
-        
-        Args:
-            features: Complete ~500-dimensional feature vector
-            
-        Returns:
-            Sanitized feature vector with equity-dependent features zeroed out
+        Sanitizes features for range training using the universal metadata-driven function.
+        Removes both private information (hole cards) and leaky features (range-dependent).
         """
-        from poker_feature_schema import PokerFeatureSchema
-        from dataclasses import fields
-        
-        # Make a copy to avoid modifying the original
-        sanitized = list(features)
-        
-        # Define features that must be removed (depend on opponent range)
-        # Use root names to catch both current AND historical variants
-        leaky_feature_roots = {
-            'equity_vs_range',      # Catches: equity_vs_range, preflop_equity_vs_range, etc.
-            'equity_delta',         # Catches: equity_delta, flop_equity_delta, etc.
-            'implied_odds'
-        }
-        
-        # Programmatically find and zero out leaky features
-        try:
-            schema = PokerFeatureSchema()
-            current_index = 0
-            
-            # Iterate through all feature groups in the schema
-            for group_field in fields(schema):
-                group_obj = getattr(schema, group_field.name)
-                
-                # Handle groups with to_list() method (complex feature groups)
-                if hasattr(group_obj, 'to_list'):
-                    for feature_field in fields(group_obj):
-                        if any(root in feature_field.name for root in leaky_feature_roots):
-                            if current_index < len(sanitized):
-                                sanitized[current_index] = 0.0
-                        current_index += 1
-                # Handle simple feature groups
-                else:
-                    # Check if this simple group contains leaky features
-                    if hasattr(group_obj, '__class__') and hasattr(group_obj.__class__, '__dataclass_fields__'):
-                        for feature_field in fields(group_obj):
-                            if any(root in feature_field.name for root in leaky_feature_roots):
-                                if current_index < len(sanitized):
-                                    sanitized[current_index] = 0.0
-                            current_index += 1
-                    else:
-                        # Skip non-dataclass groups
-                        current_index += 1
-                        
-        except Exception as e:
-            # Fallback: if schema parsing fails, don't crash training
-            # Just log the error and return original features
-            print(f"Warning: Feature sanitization failed: {e}")
-            return features
-        
-        return sanitized
+        from analyzers.feature_utils import sanitize_features
+        return sanitize_features(features, purpose='training')
     
     def _get_hand_cards(self, player_id: int) -> List[str]:
         """Extract hand cards for a player from environment state."""
@@ -489,13 +444,24 @@ class DataCollector:
             else:
                 # Fallback for no simulator: always reset completely.
                 state = self.env.reset(preserve_stacks=False)
-            
+                        
             # By this point, `state` is guaranteed to be a fresh, playable hand.
             # Safety check: skip any terminal states that might slip through
             if state.get('terminal'):
                 continue
             
-            self.feature_extractor.new_hand(self.env.state.stacks.copy())
+            # ✅ FIX: Initialize the hand in the tracker, which also records the blind posts.
+            # This replaces the old self.feature_extractor.new_hand() call.
+            self.feature_extractor.history_tracker.initialize_hand_with_blinds(
+                self.env.state,
+                hand_number=hand_num
+            )
+            
+            # ✅ FIX: Reset ActionSequencer to prevent stale data from previous hand
+            self.feature_extractor.action_sequencer.new_street()
+            
+            # ✅ FIX: Clear any cached hand analyzer state from previous hand
+            self.feature_extractor.hand_analyzer.clear_cache()
             
             # Initialize equity-based reward system for this hand
             self._initialize_range_constructor(action_selector)
@@ -504,11 +470,22 @@ class DataCollector:
             # Initialize new HandEventIdentifier architecture
             self._start_new_hand(hand_num, current_episode)
             
+            # Clear hand training buffer for new hand
+            self.hand_training_buffer.clear()
+            
             hand_experiences = []
             initial_stack = self.env.state.stacks[0]
             
-            # DEBUG: Hand history logging (log every 50th hand for analysis)
-            should_log_hand = (hand_num % 49 == 0)
+            # 💡 --- CORRECTED LOGGING LOGIC ---
+            # Decide at the START of the hand if it needs logging for ANY reason.
+            # Reason 1: It's a regularly scheduled log (e.g., every 50th hand).
+            is_regular_log_hand = (hand_num % 49 == 0)
+            
+            # Reason 2: It's an episode where we are actively LOOKING for an interesting hand to dump.
+            is_dump_watch_episode = (current_episode == 11)  # Change 11 to any target episode
+            
+            # A hand log will be created if either condition is true.
+            should_log_hand = is_regular_log_hand or is_dump_watch_episode
             hand_log = [] if should_log_hand else None
             
             if should_log_hand:
@@ -541,21 +518,59 @@ class DataCollector:
                     if new_street != current_street:
                         current_street = new_street
                         if len(board) > 0:
-                            hand_log.append(f"- {current_street} {board}: ")
-                        pot_at_street_start = state.get('pot', 100)
+                            pot_at_street_start = state.get('pot', 100)
+                            hand_log.append(f"- {current_street} {board} (pot: {pot_at_street_start}): ")
+                        else:
+                            pot_at_street_start = state.get('pot', 100)
                 
                 if current_player == 0:  # Average strategy agent
                     # Extract features for current player (Player 0), opponent is Player 1
+                    # 🎯 GTO TRAINING: AS agent trains without opponent stats to learn unexploitable strategy
                     features, schema = self.feature_extractor.extract_features(
-                        self.env.state, 0, opponent_stats, self.opponent_action_history
-                    )
+                        self.env.state, 0, opponent_stats=None, opponent_action_history=None)
+                    
+                    # === INTELLIGENT EXHAUSTIVE DUMP (CORRECTED) ===
+                    # Only check for dumps on designated watch episodes.
+                    dump_key = f"AS_{current_episode}"
+                    if (is_dump_watch_episode and 
+                        dump_key not in self.exhaustive_dump_triggered and
+                        self.live_feature_debugger.is_interesting_scenario(schema, self.env.state)):
+                        
+                        print(f"\n📸 EXHAUSTIVE DUMP: Interesting scenario detected in Episode {current_episode}")
+                        try:
+                            # The hand_log is guaranteed to exist because should_log_hand is true.
+                            scenario_desc = self.live_feature_debugger.describe_scenario(schema, self.env.state)
+                            
+                            # Add the dump content to the existing hand log.
+                            hand_log.append(f"\n{'='*60}\n🎯 SCENARIO: {scenario_desc}\n{'='*60}\n")
+                            
+                            # Add exhaustive dump context to include complete hand history
+                            context = {
+                                'episode': current_episode,
+                                'hand': hand_num,
+                                'street': current_street,
+                                'stage': self.env.state.stage,
+                                'pot': state.get('pot', 0),
+                                'stacks': state.get('stacks', []),
+                                'scenario': scenario_desc,
+                                'hand_history': hand_log  # Include complete hand history up to this point
+                            }
+                            
+                            hand_log.append(dump_all_features_to_log(schema, f"P0(AS)-{scenario_desc}", context))
+                            
+                            print(f"✅ Exhaustive dump queued for scenario: {scenario_desc}")
+                            self.exhaustive_dump_triggered[dump_key] = True
+                        except Exception as e:
+                            print(f"⚠️ Failed to queue scenario dump: {e}")
+                    # === END INTELLIGENT DUMP ===
+                    
                     action, amount = action_selector._get_average_strategy_action(features, state)
                     
                     # Add feature logging for detailed hand analysis
                     if should_log_hand:
                         player_name = "P0(AS)"
                         # Use detailed logging for interesting decisions
-                        detailed = self.live_debugger.should_log_detailed_features(schema, action, amount)
+                        detailed = self.live_feature_debugger.should_log_detailed_features(schema, action, amount)
                         feature_log = format_features_for_hand_log(
                             schema, player_name, action, amount, 
                             detailed=detailed
@@ -572,18 +587,27 @@ class DataCollector:
                     hand_experiences.append(experience)
                     
                 else:  # Best response opponent
-                    # Extract features for current player (Player 1), opponent is Player 0
-                    # For opponent, we don't have comprehensive stats, so pass None
-                    features, schema = self.feature_extractor.extract_features(self.env.state, 1, None, None)
-                    action, amount = action_selector._get_best_response_action(features, state)
+                    # ✅ 1. Capture the "ACTIVE" state BEFORE the BR agent acts
+                    as_stats = self.stats_tracker.get_player_percentages("average_strategy_v1")
+                    features_before, schema_before = self.feature_extractor.extract_features(
+                        self.env.state, 1, opponent_stats=as_stats, opponent_action_history=None)
+                    
+                    # Store the before state in buffer
+                    self.hand_training_buffer.append({
+                        'features': features_before,
+                        'seat_id': 1
+                    })
+                    
+                    # ✅ 2. The BR agent makes its decision
+                    action, amount = action_selector._get_best_response_action(features_before, state)
                     
                     # Add feature logging for detailed hand analysis
                     if should_log_hand:
                         player_name = "P1(BR)"
                         # Use detailed logging for interesting decisions
-                        detailed = self.live_debugger.should_log_detailed_features(schema, action, amount)
+                        detailed = self.live_feature_debugger.should_log_detailed_features(schema_before, action, amount)
                         feature_log = format_features_for_hand_log(
-                            schema, player_name, action, amount, 
+                            schema_before, player_name, action, amount, 
                             detailed=detailed
                         )
                         hand_log.append(feature_log)
@@ -592,10 +616,6 @@ class DataCollector:
                     action_data = {'action': action, 'amount': amount or 0}
                     self.opponent_action_history.append(action_data)
                     
-                    # Collect range training data for opponent (Player 1)
-                    opponent_hole_cards = self._get_hand_cards(1)
-                    self._collect_range_training_data(features, opponent_hole_cards)
-                
                 # Track action statistics
                 if action == 0:  # Fold
                     folds += 1
@@ -643,11 +663,56 @@ class DataCollector:
                 # Store the stage BEFORE the action
                 current_stage = old_state.get('stage', 0)
                 
+                # ✅ FIX: Record action in ActionSequencer BEFORE taking it
+                # Only record meaningful poker actions, not engine-generated intermediate steps
+                if action == 0:
+                    action_type = 'fold'
+                elif action == 1:
+                    # ✅ FIX: Only record actual calls, not blind completions or zero-amount actions
+                    current_bets = old_state.get('current_bets', [])
+                    max_bet = max(current_bets) if current_bets else 0
+                    player_bet = current_bets[current_player] if current_player < len(current_bets) else 0
+                    to_call = max_bet - player_bet
+                    
+                    if to_call == 0:
+                        action_type = 'check'
+                    elif amount and amount > 0:
+                        action_type = 'call'
+                    else:
+                        # Skip recording phantom actions (blind completions, etc.)
+                        action_type = None
+                elif action == 2:
+                    # Action 2 can be bet (first aggressive action) or raise (in response to bet)
+                    current_bets = old_state.get('current_bets', [])
+                    max_bet = max(current_bets) if current_bets else 0
+                    action_type = 'bet' if max_bet == 0 else 'raise'
+                else:
+                    action_type = None  # Skip unknown/invalid actions
+                
+                # ✅ FIX: Only record actual poker actions, skip phantom actions
+                if action_type is not None:
+                    # 🐛 DEBUG: Log action recording to hand history for context
+                    if hasattr(self, 'hand_log'):
+                        self.hand_log.append(f"    DEBUG: Recording action for P{current_player}: {action_type} {amount or 0}")
+                    self.feature_extractor.record_action(current_player, action_type, amount or 0)
+                
                 # Take the action and get new state
                 new_state, _, done = self.env.step(action, amount)
                 
+                # ✅ 3. Capture the "PASSIVE" state AFTER the BR agent has acted
+                if current_player == 1:  # If the BR agent just moved
+                    as_stats = self.stats_tracker.get_player_percentages("average_strategy_v1")
+                    features_after, schema_after = self.feature_extractor.extract_features(
+                        self.env.state, 1, opponent_stats=as_stats, opponent_action_history=None)
+                    
+                    # Store the after state in buffer
+                    self.hand_training_buffer.append({
+                        'features': features_after,
+                        'seat_id': 1
+                    })
+                
                 # --- CRITICAL FIX: UPDATE INVESTMENT TRACKING ---
-                # Update HistoryTracker with player investments for commitment features
+                # Update StreetHistoryTracker with player investments for commitment features
                 if action in [1, 2] and amount and amount > 0:  # Call or Bet/Raise
                     self.feature_extractor.history_tracker.update_investment(current_player, amount)
                 # --- END: INVESTMENT TRACKING FIX ---
@@ -658,8 +723,23 @@ class DataCollector:
                     # The street has ended. Save a snapshot of the completed street.
                     street_that_just_ended = self._get_street_name(current_stage)
                     
-                    # Save the snapshot with the correct street name
-                    self.feature_extractor.save_street_snapshot(self.env.state, street=street_that_just_ended)
+                    # ✅ Get the final schema which includes the calculated strategic features
+                    as_stats = self.stats_tracker.get_player_percentages("average_strategy_v1") if self.stats_tracker else {}
+                    _, final_schema = self.feature_extractor.extract_features(
+                        self.env.state, 0, opponent_stats=as_stats, full_hand_action_history=self.opponent_action_history
+                    )
+                    
+                    # Convert the strategic features object to a dict to be saved
+                    strategic_data_to_save = None
+                    if hasattr(final_schema, 'current_strategic') and final_schema.current_strategic:
+                        strategic_data_to_save = final_schema.current_strategic.to_dict()
+                    
+                    # ✅ Pass the strategic data to the snapshot saver
+                    self.feature_extractor.save_street_snapshot(
+                        self.env.state,
+                        strategic_features=strategic_data_to_save,
+                        street=street_that_just_ended
+                    )
                     
                     # Reset the ActionSequencer for the new street
                     self.feature_extractor.new_street()
@@ -682,6 +762,11 @@ class DataCollector:
             
             # Complete hand analysis using HandEventIdentifier
             self._finish_hand_with_event_identifier(state, player_map)
+            
+            # ✅ Process hand training buffer - convert to range training data
+            br_hole_cards = self._get_hand_cards(1)  # BR agent is Player 1
+            for buffer_entry in self.hand_training_buffer:
+                self._collect_range_training_data(buffer_entry['features'], br_hole_cards)
             
             # DEBUG: Log showdown and write hand history
             if should_log_hand:
@@ -720,11 +805,11 @@ class DataCollector:
             
             # Process experiences with combined rewards
             for exp in hand_experiences:
-                # Traditional end-of-hand reward (reduced weight)
-                profit_reward = hand_profit / 200.0 * 0.2  # Reduced: balance with equity
+                # Traditional end-of-hand reward (configurable weight)
+                profit_reward = hand_profit / 200.0 * self.profit_weight
                 
-                # Equity-based immediate reward (increased weight)
-                equity_reward = exp.get('equity_reward', 0.0) * 0.8  # Increased: stronger equity influence
+                # Equity-based immediate reward (configurable weight)
+                equity_reward = exp.get('equity_reward', 0.0) * self.equity_weight
                 
                 # Combined reward: immediate equity feedback + final outcome
                 exp['reward'] = profit_reward + equity_reward
@@ -794,13 +879,24 @@ class DataCollector:
             else:
                 # Fallback for no simulator: always reset completely.
                 state = self.env.reset(preserve_stacks=False)
-            
+                        
             # By this point, `state` is guaranteed to be a fresh, playable hand.
             # Safety check: skip any terminal states that might slip through
             if state.get('terminal'):
                 continue
             
-            self.feature_extractor.new_hand(self.env.state.stacks.copy())
+            # ✅ FIX: Initialize the hand in the tracker, which also records the blind posts.
+            # This replaces the old self.feature_extractor.new_hand() call.
+            self.feature_extractor.history_tracker.initialize_hand_with_blinds(
+                self.env.state,
+                hand_number=hand_num
+            )
+            
+            # ✅ FIX: Reset ActionSequencer to prevent stale data from previous hand
+            self.feature_extractor.action_sequencer.new_street()
+            
+            # ✅ FIX: Clear any cached hand analyzer state from previous hand
+            self.feature_extractor.hand_analyzer.clear_cache()
             
             # Initialize equity-based reward system for this hand
             self._initialize_range_constructor(action_selector)
@@ -822,6 +918,8 @@ class DataCollector:
                     features, _ = self.feature_extractor.extract_features(
                         self.env.state, 0, opponent_stats, self.opponent_action_history
                     )
+                    
+                    
                     action, amount = action_selector._get_best_response_action(features, state)
                     
                     # Store experience data with pot size at action time
@@ -836,16 +934,16 @@ class DataCollector:
                 else:  # Average strategy opponent
                     # Extract features for current player (Player 1), opponent is Player 0
                     # For opponent, we don't have comprehensive stats, so pass None
-                    features, _ = self.feature_extractor.extract_features(self.env.state, 1, None, None)
+                    features, _ = self.feature_extractor.extract_features(
+                        self.env.state, 1, opponent_stats=None, opponent_action_history=None)
                     action, amount = action_selector._get_average_strategy_action(features, state)
                     
                     # CRITICAL FIX: Track opponent actions for equity calculation
                     action_data = {'action': action, 'amount': amount or 0}
                     self.opponent_action_history.append(action_data)
                     
-                    # Collect range training data for opponent (Player 1)
-                    opponent_hole_cards = self._get_hand_cards(1)
-                    self._collect_range_training_data(features, opponent_hole_cards)
+                    # ❌ REMOVED: Don't collect range data from AS opponent in BR training
+                    # Range data should only come from BR agent (the exploiter)
                 
                 # Track action statistics
                 if action == 0:  # Fold
@@ -866,11 +964,44 @@ class DataCollector:
                 # Store the stage BEFORE the action
                 current_stage = old_state.get('stage', 0)
                 
+                # ✅ FIX: Record action in ActionSequencer BEFORE taking it
+                # Only record meaningful poker actions, not engine-generated intermediate steps
+                if action == 0:
+                    action_type = 'fold'
+                elif action == 1:
+                    # ✅ FIX: Only record actual calls, not blind completions or zero-amount actions
+                    current_bets = old_state.get('current_bets', [])
+                    max_bet = max(current_bets) if current_bets else 0
+                    player_bet = current_bets[current_player] if current_player < len(current_bets) else 0
+                    to_call = max_bet - player_bet
+                    
+                    if to_call == 0:
+                        action_type = 'check'
+                    elif amount and amount > 0:
+                        action_type = 'call'
+                    else:
+                        # Skip recording phantom actions (blind completions, etc.)
+                        action_type = None
+                elif action == 2:
+                    # Action 2 can be bet (first aggressive action) or raise (in response to bet)
+                    current_bets = old_state.get('current_bets', [])
+                    max_bet = max(current_bets) if current_bets else 0
+                    action_type = 'bet' if max_bet == 0 else 'raise'
+                else:
+                    action_type = None  # Skip unknown/invalid actions
+                
+                # ✅ FIX: Only record actual poker actions, skip phantom actions
+                if action_type is not None:
+                    # 🐛 DEBUG: Log action recording to hand history for context
+                    if hasattr(self, 'hand_log'):
+                        self.hand_log.append(f"    DEBUG: Recording action for P{current_player}: {action_type} {amount or 0}")
+                    self.feature_extractor.record_action(current_player, action_type, amount or 0)
+                
                 # Take the action and get new state
                 new_state, _, done = self.env.step(action, amount)
                 
                 # --- CRITICAL FIX: UPDATE INVESTMENT TRACKING ---
-                # Update HistoryTracker with player investments for commitment features
+                # Update StreetHistoryTracker with player investments for commitment features
                 if action in [1, 2] and amount and amount > 0:  # Call or Bet/Raise
                     self.feature_extractor.history_tracker.update_investment(current_player, amount)
                 # --- END: INVESTMENT TRACKING FIX ---
@@ -881,8 +1012,23 @@ class DataCollector:
                     # The street has ended. Save a snapshot of the completed street.
                     street_that_just_ended = self._get_street_name(current_stage)
                     
-                    # Save the snapshot with the correct street name
-                    self.feature_extractor.save_street_snapshot(self.env.state, street=street_that_just_ended)
+                    # ✅ Get the final schema which includes the calculated strategic features
+                    as_stats = self.stats_tracker.get_player_percentages("average_strategy_v1") if self.stats_tracker else {}
+                    _, final_schema = self.feature_extractor.extract_features(
+                        self.env.state, 0, opponent_stats=as_stats, full_hand_action_history=self.opponent_action_history
+                    )
+                    
+                    # Convert the strategic features object to a dict to be saved
+                    strategic_data_to_save = None
+                    if hasattr(final_schema, 'current_strategic') and final_schema.current_strategic:
+                        strategic_data_to_save = final_schema.current_strategic.to_dict()
+                    
+                    # ✅ Pass the strategic data to the snapshot saver
+                    self.feature_extractor.save_street_snapshot(
+                        self.env.state,
+                        strategic_features=strategic_data_to_save,
+                        street=street_that_just_ended
+                    )
                     
                     # Reset the ActionSequencer for the new street
                     self.feature_extractor.new_street()
@@ -930,11 +1076,11 @@ class DataCollector:
             
             # Process experiences with combined rewards
             for exp in hand_experiences:
-                # Traditional end-of-hand reward (reduced weight)
-                profit_reward = hand_profit / 200.0 * 0.2  # Reduced: balance with equity
+                # Traditional end-of-hand reward (configurable weight)
+                profit_reward = hand_profit / 200.0 * self.profit_weight
                 
-                # Equity-based immediate reward (increased weight)
-                equity_reward = exp.get('equity_reward', 0.0) * 0.8  # Increased: stronger equity influence
+                # Equity-based immediate reward (configurable weight)
+                equity_reward = exp.get('equity_reward', 0.0) * self.equity_weight
                 
                 # Combined reward: immediate equity feedback + final outcome
                 exp['reward'] = profit_reward + equity_reward

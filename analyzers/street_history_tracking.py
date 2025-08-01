@@ -7,7 +7,7 @@ from typing import Dict, List, Any, Optional
 import copy
 
 
-class HistoryTracker:
+class StreetHistoryTracker:
     """
     Generic flexible tracker for any historical game state information.
     
@@ -20,7 +20,7 @@ class HistoryTracker:
     
     This decouples history storage from feature logic, creating a scalable
     backend that allows new features to be tracked over time with no
-    modifications needed to the HistoryTracker itself.
+    modifications needed to the StreetHistoryTracker itself.
     """
     
     def __init__(self):
@@ -247,6 +247,67 @@ class HistoryTracker:
         if player_id < len(self.player_total_invested):
             self.player_total_invested[player_id] += amount
     
+    def get_last_aggressor(self) -> Optional[int]:
+        """Get the last aggressor from the most recent street snapshot."""
+        hand_key = f"hand_{self.current_hand_number}"
+        
+        # Check streets in reverse order (river, turn, flop, preflop)
+        for street in ["river", "turn", "flop", "preflop"]:
+            snapshot = self.get_snapshot(hand_key, street)
+            if not snapshot:
+                continue
+                
+            # Look for last bettor/raiser markers in the snapshot
+            for seat_id in range(self.num_players):
+                prefix = f"seat_{seat_id}_"
+                if snapshot.get(f"{prefix}is_last_bettor", 0.0) == 1.0:
+                    return seat_id
+        
+        return None  # No aggressor found
+    
+    def get_preflop_aggressor(self) -> Optional[int]:
+        """Get the preflop aggressor (raiser) for float bet detection."""
+        hand_key = f"hand_{self.current_hand_number}"
+        preflop_snapshot = self.get_snapshot(hand_key, "preflop")
+        
+        if not preflop_snapshot:
+            return None
+            
+        # Look for the preflop aggressor
+        for seat_id in range(self.num_players):
+            prefix = f"seat_{seat_id}_"
+            if preflop_snapshot.get(f"{prefix}is_last_bettor", 0.0) == 1.0:
+                return seat_id
+        
+        return None
+    
+    def get_street_history(self, stage: int) -> List[Dict[str, Any]]:
+        """Get raw action log for a street by stage number, converted to dict format."""
+        hand_key = f"hand_{self.current_hand_number}"
+        stage_to_street = {0: "preflop", 1: "flop", 2: "turn", 3: "river"}
+        street = stage_to_street.get(stage, "preflop")
+        snapshot = self.get_snapshot(hand_key, street)
+        
+        if not snapshot:
+            return []
+        
+        raw_log = snapshot.get('raw_action_log', [])
+        if not raw_log:
+            return []
+        
+        # Convert from ActionSequencer tuples (seat_id, action_type, amount) to dicts
+        action_dicts = []
+        for action_tuple in raw_log:
+            if len(action_tuple) >= 3:
+                seat_id, action_type, amount = action_tuple[0], action_tuple[1], action_tuple[2]
+                action_dicts.append({
+                    'seat_id': seat_id,
+                    'action': action_type,
+                    'amount': amount
+                })
+        
+        return action_dicts
+    
     def _cleanup_old_data(self):
         """Clean up old data to prevent memory bloat (placeholder for now)."""
         # For now, rely on _cleanup_old_snapshots() in save_snapshot()
@@ -255,12 +316,12 @@ class HistoryTracker:
 
 
 # Global instance for backward compatibility
-history_tracker = HistoryTracker()
+history_tracker = StreetHistoryTracker()
 
 
 # === USAGE EXAMPLES ===
 """
-Example Usage of the New Generic HistoryTracker:
+Example Usage of the New Generic StreetHistoryTracker:
 
 # Save any feature data
 tracker.save_snapshot("hand_42", "flop", {

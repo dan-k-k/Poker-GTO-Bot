@@ -149,12 +149,12 @@ class BoardAnalyzer:
                         elif len(pattern_cards) == best_sf_cards and gaps < best_sf_gaps:
                             best_sf_gaps = gaps
             
-            # Add features for this suit
+            # Add features for this suit (normalize count features)
             flush_features.extend([
-                cards_present,
-                high_card_rank,
-                float(best_sf_cards),
-                float(best_sf_gaps)
+                cards_present / 5.0,  # Normalize by max cards (0-5)
+                high_card_rank,       # Already normalized
+                float(best_sf_cards) / 5.0,  # Normalize by max cards
+                float(best_sf_gaps) / 3.0  # Gaps
             ])
         
         # === RANK COUNT VECTOR ===
@@ -208,11 +208,11 @@ class BoardAnalyzer:
                     has_high_end = any(r in sorted_present for r in pattern_list[-2:])
                     is_open_ended = 1.0 if has_low_end and has_high_end else 0.0
             
-            # Add the three features for this straight
+            # Add the three features for this straight (normalize count features)
             straight_features.extend([
-                float(cards_present),
-                float(internal_gaps),
-                is_open_ended
+                float(cards_present) / 5.0,  # Normalize by max cards (0-5)
+                float(internal_gaps) / 3.0,        # Gaps 
+                is_open_ended                # Already binary (0.0 or 1.0)
             ])
         
         return TextureFeatureSet(
@@ -233,20 +233,20 @@ class BoardAnalyzer:
             diamonds_high_card_rank=flush_features[5],
             diamonds_straight_flush_cards=flush_features[6],
             diamonds_straight_flush_gaps=flush_features[7],
-            # Rank count vector
-            rank_2_count=rank_counts[0],
-            rank_3_count=rank_counts[1],
-            rank_4_count=rank_counts[2],
-            rank_5_count=rank_counts[3],
-            rank_6_count=rank_counts[4],
-            rank_7_count=rank_counts[5],
-            rank_8_count=rank_counts[6],
-            rank_9_count=rank_counts[7],
-            rank_T_count=rank_counts[8],
-            rank_J_count=rank_counts[9],
-            rank_Q_count=rank_counts[10],
-            rank_K_count=rank_counts[11],
-            rank_A_count=rank_counts[12],
+            # Rank count vector (normalized by max possible count)
+            rank_2_count=rank_counts[0] / 4.0,
+            rank_3_count=rank_counts[1] / 4.0,
+            rank_4_count=rank_counts[2] / 4.0,
+            rank_5_count=rank_counts[3] / 4.0,
+            rank_6_count=rank_counts[4] / 4.0,
+            rank_7_count=rank_counts[5] / 4.0,
+            rank_8_count=rank_counts[6] / 4.0,
+            rank_9_count=rank_counts[7] / 4.0,
+            rank_T_count=rank_counts[8] / 4.0,
+            rank_J_count=rank_counts[9] / 4.0,
+            rank_Q_count=rank_counts[10] / 4.0,
+            rank_K_count=rank_counts[11] / 4.0,
+            rank_A_count=rank_counts[12] / 4.0,
             # Straight threat map (30 features)
             A5_cards_present=straight_features[0],
             A5_internal_gaps=straight_features[1],
