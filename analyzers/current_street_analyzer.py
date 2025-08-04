@@ -401,16 +401,9 @@ class CurrentStreetAnalyzer:
         else:
             effective_spr = 0.0
         
-        # Enhanced implied odds calculation (considers opponent range if available)
-        implied_odds = self._calculate_enhanced_implied_odds(static_ctx, dynamic_ctx, opponent_stats)
         
         # Hand strength via Monte Carlo simulation
         hand_strength = self._calculate_hand_strength(hole_cards, community_cards)
-        
-        # Equity vs opponent's estimated range
-        equity_vs_range = self._calculate_equity_vs_range(
-            hole_cards, community_cards, opponent_stats, opponent_action_history, pot
-        )
         
         # Delta features (change from previous street)
         spr_delta = self._calculate_spr_delta(static_ctx, dynamic_ctx, effective_spr)
@@ -453,9 +446,7 @@ class CurrentStreetAnalyzer:
         
         return {
             "effective_spr": effective_spr,
-            "implied_odds": implied_odds,
             "hand_strength": hand_strength,
-            "equity_vs_range": equity_vs_range,
             "spr_delta": spr_delta,
             "pot_size_delta": pot_size_delta,
             "is_facing_check": is_facing_check,
@@ -814,9 +805,9 @@ class CurrentStreetAnalyzer:
             return 1.0
         
         return 0.0
-    
+        
     def _detect_cbet(self, seat_id: int, action_sequence: list, 
-                     static_ctx: StaticContext, dynamic_ctx: DynamicContext) -> float:
+                    static_ctx: StaticContext, dynamic_ctx: DynamicContext) -> float:
         """
         Unified C-bet detection: Did this player continue aggression from the previous street?
         
@@ -833,10 +824,29 @@ class CurrentStreetAnalyzer:
         if stage == 0:
             return 0.0
         
-        # Check if this player was the aggressor from the previous street
-        previous_street_aggressor = dynamic_ctx.history_tracker.get_last_aggressor()
-        if previous_street_aggressor != seat_id:
+        # --- START: CORRECTED LOGIC ---
+        # 1. Determine the name of the immediately preceding street.
+        street_map = {1: 'preflop', 2: 'flop', 3: 'turn'}
+        previous_street_name = street_map.get(stage)
+        if not previous_street_name:
+            return 0.0 # Should not happen post-flop
+
+        # 2. Get the historical data for ONLY that previous street.
+        hand_key = f"hand_{dynamic_ctx.history_tracker.get_hand_number()}"
+        prev_street_snapshot = dynamic_ctx.history_tracker.get_snapshot(hand_key, previous_street_name)
+
+        # 3. Find who the aggressor was on that specific street, if anyone.
+        aggressor_on_prev_street = None
+        if prev_street_snapshot:
+            for p_id in range(static_ctx.num_players):
+                if prev_street_snapshot.get(f"seat_{p_id}_is_last_bettor", 0.0) == 1.0:
+                    aggressor_on_prev_street = p_id
+                    break # Found the aggressor
+
+        # 4. Check if the current player was that aggressor.
+        if aggressor_on_prev_street != seat_id:
             return 0.0
+        # --- END: CORRECTED LOGIC ---
             
         # Find the first bet/raise on the current street
         first_aggressive_action = None

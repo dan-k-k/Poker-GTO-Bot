@@ -244,8 +244,10 @@ class NetworkTrainer:
             if exp['action'] == 2 and exp['bet_amount'] > 0:  # Only for bet/raise actions
                 # Normalize bet size relative to pot (AS uses more conservative range)
                 pot_size = exp.get('pot_size', 100)  # Fallback pot size
-                normalized_bet = min(exp['bet_amount'] / max(pot_size, 1), 2.0) / 2.0
-                bet_targets.append(normalized_bet)
+                normalized_bet = min(exp['bet_amount'] / max(pot_size, 1), 2.2) / 2.2
+                # CONSISTENCY FIX: Train network to predict sqrt of target since ActionSelector squares the output
+                sqrt_target = torch.sqrt(torch.tensor(normalized_bet, dtype=torch.float32)).item()
+                bet_targets.append(sqrt_target)
                 bet_mask.append(1.0)
             else:
                 bet_targets.append(0.0)
@@ -274,7 +276,9 @@ class NetworkTrainer:
                 # Normalize bet size relative to pot (exploiter can bet larger)
                 pot_size = exp.get('pot_size', 100)  # Fallback pot size
                 normalized_bet = min(exp['bet_amount'] / max(pot_size, 1), 2.2) / 2.2
-                bet_targets.append(normalized_bet)
+                # CONSISTENCY FIX: Train network to predict sqrt of target since ActionSelector squares the output
+                sqrt_target = torch.sqrt(torch.tensor(normalized_bet, dtype=torch.float32)).item()
+                bet_targets.append(sqrt_target)
                 
                 # Weight by reward: higher rewards = more important to learn from
                 # Use advantage (how much better than expected) as weight
@@ -313,7 +317,7 @@ class NetworkTrainer:
         bet_mask = []
         for exp in batch:
             if exp['action'] == 2 and exp['bet_amount'] > 0:
-                normalized_bet = min(exp['bet_amount'] / max(exp['pot_size'], 1), 2.0) / 2.0
+                normalized_bet = min(exp['bet_amount'] / max(exp['pot_size'], 1), 2.2) / 2.2
                 bet_targets.append(normalized_bet)
                 bet_mask.append(1.0)
             else:
@@ -377,7 +381,7 @@ class NetworkTrainer:
         bet_mask = []
         for exp in batch:
             if exp['action'] == 2 and exp['bet_amount'] > 0:
-                normalized_bet = min(exp['bet_amount'] / max(exp['pot_size'], 1), 2.0) / 2.0
+                normalized_bet = min(exp['bet_amount'] / max(exp['pot_size'], 1), 2.2) / 2.2
                 bet_targets.append(normalized_bet)
                 bet_mask.append(1.0)
             else:

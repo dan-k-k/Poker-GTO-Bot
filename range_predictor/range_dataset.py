@@ -41,10 +41,10 @@ class RangeDataset(Dataset):
         self.normalize_features = normalize_features
         
         if hand_properties is None:
+            # Define the new embedding dimensions in the correct order
             self.hand_properties = [
-                'premium_pair', 'mid_pair', 'small_pair',
-                'suited_broadway', 'offsuit_broadway', 'suited_connector',
-                'suited_ace', 'bluff_candidate', 'strong_draw', 'weak_draw'
+                'pair_value', 'high_card_value', 'low_card_value', 'suitedness', 
+                'connectivity', 'broadway_potential', 'wheel_potential', 'mid_strength_potential'
             ]
         else:
             self.hand_properties = hand_properties
@@ -116,7 +116,7 @@ class RangeDataset(Dataset):
         """Return the number of samples in the dataset."""
         return len(self.data)
     
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Get a single training sample.
         
@@ -124,7 +124,7 @@ class RangeDataset(Dataset):
             idx: Index of the sample
             
         Returns:
-            Tuple of (features_tensor, hand_properties_dict)
+            Tuple of (features_tensor, target_tensor)
         """
         item = self.data[idx]
         
@@ -134,14 +134,13 @@ class RangeDataset(Dataset):
             features = self._normalize_features(features)
         features_tensor = torch.from_numpy(features)
         
-        # Convert hand properties to tensors
-        hand_props = {}
-        for prop_name in self.hand_properties:
-            # Default to 0.0 if property not found
-            prop_value = item['hand_properties'].get(prop_name, 0.0)
-            hand_props[prop_name] = torch.tensor(prop_value, dtype=torch.float32)
+        # --- START: DATASET GETITEM CHANGE ---
+        # Create a single target tensor from the dictionary
+        target_values = [item['hand_properties'].get(dim, 0.0) for dim in self.hand_properties]
+        target_tensor = torch.tensor(target_values, dtype=torch.float32)
         
-        return features_tensor, hand_props
+        return features_tensor, target_tensor
+        # --- END: DATASET GETITEM CHANGE ---
     
     def get_sample_info(self) -> Dict:
         """Get information about the dataset."""
@@ -227,7 +226,7 @@ def create_data_loaders(data_file: str,
 # Utility function for hand property classification
 def classify_hand_properties(rank1: int, rank2: int, suited: bool) -> Dict[str, float]:
     """
-    Classify a two-card hand into property categories.
+    Classify a two-card hand into a continuous embedding vector.
     
     Args:
         rank1: Rank of first card (0=2, 12=A)
@@ -235,51 +234,38 @@ def classify_hand_properties(rank1: int, rank2: int, suited: bool) -> Dict[str, 
         suited: Whether the hand is suited
         
     Returns:
-        Dictionary of hand property probabilities (0.0 or 1.0)
+        Dictionary representing the hand's embedding.
     """
     # Ensure rank1 >= rank2 for consistency
     high_rank, low_rank = max(rank1, rank2), min(rank1, rank2)
     
+    # --- START: NEW EMBEDDING LOGIC ---
     properties = {
-        'premium_pair': 0.0,
-        'mid_pair': 0.0, 
-        'small_pair': 0.0,
-        'suited_broadway': 0.0,
-        'offsuit_broadway': 0.0,
-        'suited_connector': 0.0,
-        'suited_ace': 0.0,
-        'bluff_candidate': 0.0,
-        'strong_draw': 0.0,
-        'weak_draw': 0.0
+        # Pair Value: -1.0 for non-pairs, 0.0 for 22, 1.0 for AA.
+        'pair_value': (high_rank / 12.0) if high_rank == low_rank else -1.0,
+        
+        # High Card Value: 0.0 for a 2-high, 1.0 for an A-high hand.
+        'high_card_value': high_rank / 12.0,
+        
+        # Low Card Value: 0.0 for a 2-low, 1.0 for an A-low hand.
+        'low_card_value': low_rank / 12.0,
+        
+        # Suitedness: 1.0 if suited, -1.0 if offsuit for a strong signal.
+        'suitedness': 1.0 if suited else -1.0,
+        
+        # Connectivity: 1.0 for connectors, decreasing with the gap. Negative for large gaps.
+        'connectivity': 1.0 - ((high_rank - low_rank) / 5.0),
+        
+        # Broadway Potential: How many cards are T-A.
+        'broadway_potential': ((1.0 if high_rank >= 8 else 0.0) + (1.0 if low_rank >= 8 else 0.0)) / 2.0,
+        
+        # Wheel Potential: How well it connects with A-5. A5 is 1.0, 65 is 0.8.
+        'wheel_potential': 1.0 - (min(abs(high_rank - 12), abs(high_rank - 3)) / 5.0) if high_rank <= 12 else 0.0,
+        
+        # Mid Strength Potential: Captures middle-strength hands like mid pairs and decent broadway cards.
+        'mid_strength_potential': ((high_rank + low_rank) / 24.0) * (1.0 if suited else 0.8)
     }
-    
-    is_pair = (high_rank == low_rank)
-    is_broadway = high_rank >= 9  # T, J, Q, K, A
-    is_ace = high_rank == 12  # Ace
-    gap = high_rank - low_rank
-    
-    if is_pair:
-        if high_rank >= 8:  # TT+
-            properties['premium_pair'] = 1.0
-        elif high_rank >= 4:  # 66-99
-            properties['mid_pair'] = 1.0
-        else:  # 22-55
-            properties['small_pair'] = 1.0
-    else:
-        if suited:
-            if is_broadway and low_rank >= 9:  # AKs-QJs
-                properties['suited_broadway'] = 1.0
-            elif is_ace and low_rank <= 3:  # A5s-A2s
-                properties['suited_ace'] = 1.0
-            elif gap <= 1 and high_rank >= 8:  # JTs, T9s, etc.
-                properties['suited_connector'] = 1.0
-            elif low_rank <= 6:  # Low suited cards
-                properties['bluff_candidate'] = 1.0
-        else:
-            if is_broadway and low_rank >= 9:  # AKo-QJo
-                properties['offsuit_broadway'] = 1.0
-            elif low_rank <= 4:  # Low offsuit cards
-                properties['bluff_candidate'] = 1.0
+    # --- END: NEW EMBEDDING LOGIC ---
     
     return properties
 

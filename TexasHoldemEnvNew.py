@@ -222,6 +222,7 @@ class TexasHoldemEnv:
             'initial_bet': self.state.initial_bet,
             'terminal': self.state.terminal,
             'last_raiser': self.state.last_raiser,
+            'last_raise_size': self.state.last_raise_size,
             'starting_pot_this_round': self.state.starting_pot_this_round,
             'starting_stack': self.state.starting_stack,
             'big_blind': self.state.big_blind,
@@ -257,40 +258,43 @@ class TexasHoldemEnv:
         
         return sorted(legal)
     
-    def _min_raise_amount(self, player):
-        """Calculate minimum raise amount with robust short-stack handling."""
+    def _min_raise_amount(self, player, debug=False):
+        """
+        Calculates the minimum raise amount. Now with a conditional debug switch.
+        """
+        if debug:
+            print(f"\n--- DEBUGGING _min_raise_amount for Player {player} ---")
+        
         if not self.state.active[player] or self.state.stacks[player] == 0:
+            if debug: print("  - Player is not active or has no stack. Cannot raise.")
             return None
 
-        current_max = max(self.state.current_bets)
-        have = self.state.current_bets[player]
-        to_call = current_max - have
+        current_max_bet = max(self.state.current_bets)
+        player_current_bet = self.state.current_bets[player]
         player_stack = self.state.stacks[player]
+        amount_to_call = current_max_bet - player_current_bet
 
-        # CORE FIX: A player cannot raise if their entire stack is insufficient to even call.
-        # In this case, their "all-in" is just a short call, not a raise.
-        if player_stack <= to_call:
+        if debug:
+            print(f"  - State: current_max_bet={current_max_bet}, player_current_bet={player_current_bet}, amount_to_call={amount_to_call}")
+            print(f"  - State: last_raise_size={self.state.last_raise_size}, big_blind={self.state.big_blind}")
+
+        if player_stack <= amount_to_call:
+            if debug: print(f"  - Player stack ({player_stack}) is not enough to call ({amount_to_call}). Cannot raise.")
             return None
 
-        # If we get here, the player can at least call and has chips remaining.
-        # Now, calculate what a full, standard minimum raise would be.
-        # Pre-flop special handling for the opener (e.g. raise from BB of 2 to 4)
-        last_raise = self.state.last_raise_size
-        if self.state.stage == 0 and current_max == self.state.big_blind:
-            last_raise = self.state.big_blind
-            
-        full_raise_amount = (current_max - have) + last_raise
+        min_raise_increment = max(self.state.last_raise_size, self.state.big_blind)
+        if debug: print(f"  - Calculated min_raise_increment: {min_raise_increment}")
 
-        # Can the player afford a full, standard raise?
-        if player_stack >= full_raise_amount:
-            # Yes. The minimum additional amount is the standard full raise.
-            return full_raise_amount
+        required_additional_amount = amount_to_call + min_raise_increment
+        if debug: print(f"  - FINAL required_additional_amount: {required_additional_amount}")
+
+        if player_stack >= required_additional_amount:
+            if debug: print(f"  - Player can afford full raise. Returning: {required_additional_amount}")
+            return required_additional_amount
         else:
-            # No, they cannot make a full raise.
-            # However, since we've established player_stack > to_call,
-            # their all-in constitutes a valid "short raise".
-            # The only legal raise amount for them is their entire stack.
+            if debug: print(f"  - Player is short-stacked. Returning all-in amount: {player_stack}")
             return player_stack
+
     
     def step(self, action, amount=None):
         """Execute an action and advance game state."""
@@ -320,6 +324,9 @@ class TexasHoldemEnv:
                 raise ValueError(f"Player {player} cannot raise (insufficient chips or illegal state)")
             
             if amount < required:
+                # An error is about to happen! Run the function with debug=True to see why.
+                self._min_raise_amount(player, debug=True)
+
                 current_total = self.state.current_bets[player] + amount
                 required_total = self.state.current_bets[player] + required
                 raise ValueError(f"Illegal under-raise: Player {player} tried to raise by {amount} (to {current_total} total), minimum raise by {required} (to {required_total} total)")
@@ -448,7 +455,7 @@ class TexasHoldemEnv:
         if highest_bet == 0:
             players_who_can_act = [p for p in active_players if not self.state.all_in[p]]
             return all(self.state.acted[p] for p in players_who_can_act)
-
+        
         # If there is a bet, the street is over if every active player has
         # either matched the highest bet or is all-in.
         for p in active_players:

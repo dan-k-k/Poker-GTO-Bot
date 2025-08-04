@@ -33,7 +33,7 @@ class DataCollector:
     """
     
     def __init__(self, env, feature_extractor, stack_depth_simulator=None, stats_tracker=None,
-                 profit_weight=0.2, equity_weight=0.8):
+                 profit_weight=0.7, equity_weight=0.3):
         self.env = env
         self.feature_extractor = feature_extractor
         self.stack_depth_simulator = stack_depth_simulator
@@ -161,41 +161,27 @@ class DataCollector:
                     hand_experiences.append(experience)
                     
                 else:  # Opponent
+                    # Use the NEW, simpler feature extraction that doesn't need peeking
+                    features_before, schema_before = self.feature_extractor.extract_features(
+                        self.env.state, 1, 
+                        opponent_stats=(self.stats_tracker.get_player_percentages("average_strategy_v1") if self.stats_tracker else {}),
+                        full_hand_action_history=None
+                    )
+
                     if collect_range_data:
-                        # ✅ Capture "before" state for range training (AS training only)
-                        # Use NEW public-only feature extraction for clean range training data
-                        as_stats = self.stats_tracker.get_player_percentages("average_strategy_v1") if self.stats_tracker else {}
-                        public_features_before = self.feature_extractor.extract_public_features(
-                            self.env.state, 1, opponent_stats=as_stats
+                        # Capture the public features for the opponent before they act.
+                        # The hand properties will be associated with this state.
+                        public_features = self.feature_extractor.extract_public_features(
+                            self.env.state, 1, 
+                            opponent_stats=(self.stats_tracker.get_player_percentages("average_strategy_v1") if self.stats_tracker else {})
                         )
-                        hand_training_buffer.append({'features': public_features_before, 'seat_id': 1})
-                        
-                        # Still need full features for action selection
-                        features_before, schema_before = self.feature_extractor.extract_features(
-                            self.env.state, 1, opponent_stats=as_stats, full_hand_action_history=None
-                        )
-                    else:
-                        # BR training - just get features for action
-                        features_before, schema_before = self.feature_extractor.extract_features(
-                            self.env.state, 1, opponent_stats=None, full_hand_action_history=None
-                        )
+                        hand_training_buffer.append({'features': public_features, 'seat_id': 1})
                     
                     action, amount = p1_policy(features_before, state)
                     
                     # Track opponent actions for equity calculation
                     opponent_action_history.append({'action': action, 'amount': amount or 0})
-                    
-                    if collect_range_data:
-                        # ✅ Capture "after" state for range training (AS training only)
-                        # Use NEW public-only feature extraction for clean range training data
-                        state_after_step, _, _ = self.env.step(action, amount)  # Peek at result
-                        public_features_after = self.feature_extractor.extract_public_features(
-                            self.env.state, 1, opponent_stats=as_stats
-                        )
-                        hand_training_buffer.append({'features': public_features_after, 'seat_id': 1})
-                        # Reset state since we peeked
-                        self.env.state = old_state['env_state_backup'] if 'env_state_backup' in old_state else self.env.state
-                
+
                 # Add feature logging for detailed hand analysis
                 if should_log_hand:
                     player_name = f"P{current_player}({p0_role if current_player == 0 else 'OPP'})"

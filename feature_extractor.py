@@ -20,7 +20,10 @@ from analyzers.current_street_analyzer import CurrentStreetAnalyzer
 from analyzers.street_history_analyzer import StreetHistoryAnalyzer
 from analyzers.strategic_analyzer import StrategicAnalyzer
 from analyzers.action_sequencer import ActionSequencer
-from Poker.trainingL1._OLD_equity_calculator import EquityCalculator, RangeConstructorNN
+
+# Direct imports - no fallback to avoid circular imports
+from trainingL1.equity_calculator import EquityCalculator
+from trainingL1.range_constructors import RangeConstructorNN
 
 
 class FeatureExtractor:
@@ -651,7 +654,7 @@ class FeatureExtractor:
         """Validate that feature extraction produces expected vector size."""
         try:
             features, _ = self.extract_features(game_state, seat_id)
-            expected_size = 694
+            expected_size = 736
             actual_size = len(features)
             
             if actual_size != expected_size:

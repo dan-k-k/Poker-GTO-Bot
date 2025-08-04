@@ -1,4 +1,4 @@
-# trainingL1/data_collector.py
+# trainingL1/_OLD_data_collector.py
 # Game simulation and data collection for NFSP training
 
 import numpy as np

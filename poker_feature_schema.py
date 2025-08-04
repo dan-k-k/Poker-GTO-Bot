@@ -319,7 +319,6 @@ class CurrentStrategicFeatures:
     """Current strategic features (self only)"""
     # From StrategicAnalyzer
     implied_odds: float = field(default=0.0, metadata={'leaky': True})
-    equity_vs_range: float = field(default=0.0, metadata={'leaky': True})
     hand_vs_range: float = field(default=0.0, metadata={'leaky': True})
     fold_equity: float = field(default=0.0, metadata={'leaky': True})
     showdown_equity: float = field(default=0.0, metadata={'leaky': True})
@@ -518,7 +517,7 @@ class StrategicHistoryFeatures:
     """Strategic history features (self only) [HISTORY TRACKED]"""
     # Pre-flop Strategic History
     preflop_implied_odds: float = field(default=0.0, metadata={'leaky': True})
-    preflop_equity_vs_range: float = field(default=0.0, metadata={'leaky': True})
+    preflop_hand_vs_range: float = field(default=0.0, metadata={'leaky': True})
     preflop_range_vs_range_equity: float = field(default=0.0, metadata={'leaky': True})
     preflop_fold_equity: float = field(default=0.0, metadata={'leaky': True})
     preflop_showdown_equity: float = field(default=0.0, metadata={'leaky': True})
@@ -529,7 +528,7 @@ class StrategicHistoryFeatures:
 
     # Flop Strategic History
     flop_implied_odds: float = field(default=0.0, metadata={'leaky': True})
-    flop_equity_vs_range: float = field(default=0.0, metadata={'leaky': True})
+    flop_hand_vs_range: float = field(default=0.0, metadata={'leaky': True})
     flop_range_vs_range_equity: float = field(default=0.0, metadata={'leaky': True})
     flop_fold_equity: float = field(default=0.0, metadata={'leaky': True})
     flop_showdown_equity: float = field(default=0.0, metadata={'leaky': True})
@@ -540,7 +539,7 @@ class StrategicHistoryFeatures:
 
     # Turn Strategic History
     turn_implied_odds: float = field(default=0.0, metadata={'leaky': True})
-    turn_equity_vs_range: float = field(default=0.0, metadata={'leaky': True})
+    turn_hand_vs_range: float = field(default=0.0, metadata={'leaky': True})
     turn_range_vs_range_equity: float = field(default=0.0, metadata={'leaky': True})
     turn_fold_equity: float = field(default=0.0, metadata={'leaky': True})
     turn_showdown_equity: float = field(default=0.0, metadata={'leaky': True})
@@ -551,7 +550,7 @@ class StrategicHistoryFeatures:
 
     # River Strategic History
     river_implied_odds: float = field(default=0.0, metadata={'leaky': True})
-    river_equity_vs_range: float = field(default=0.0, metadata={'leaky': True})
+    river_hand_vs_range: float = field(default=0.0, metadata={'leaky': True})
     river_range_vs_range_equity: float = field(default=0.0, metadata={'leaky': True})
     river_fold_equity: float = field(default=0.0, metadata={'leaky': True})
     river_showdown_equity: float = field(default=0.0, metadata={'leaky': True})

@@ -200,22 +200,13 @@ class StreetHistoryAnalyzer:
         """
         hand_key = f"hand_{dynamic_ctx.history_tracker.get_hand_number()}"
         
-        # ✅ FIX: Get the self's seat_id to build the correct key for reading history.
-        # This assumes the context passed in is for the self, which it is.
-        self_seat_id = static_ctx.seat_id
-        
         result = {}
         for street in ["preflop", "flop", "turn", "river"]:
             effective_spr = dynamic_ctx.history_tracker.get_feature_value(hand_key, street, "effective_spr", 0.0)
-            implied_odds_key = f"seat_{self_seat_id}_final_call_implied_odds"
-            implied_odds = dynamic_ctx.history_tracker.get_feature_value(hand_key, street, implied_odds_key, 0.0)
             hand_strength = dynamic_ctx.history_tracker.get_feature_value(hand_key, street, "hand_strength", 0.0)
-            equity_vs_range = dynamic_ctx.history_tracker.get_feature_value(hand_key, street, "equity_vs_range", 0.0)
             
             result[f"{street}_effective_spr"] = effective_spr
-            result[f"{street}_implied_odds"] = implied_odds
             result[f"{street}_hand_strength"] = hand_strength
-            result[f"{street}_equity_vs_range"] = equity_vs_range
         
         return result
     
@@ -231,8 +222,8 @@ class StreetHistoryAnalyzer:
         
         # This mirrors the structure of the StrategicHistoryFeatures dataclass
         strategic_feature_names = [
-            "implied_odds", "equity_vs_range", "range_vs_range_equity", "fold_equity",
-            "showdown_equity", "reverse_implied_odds", "range_vs_range", "future_payoff"
+            "implied_odds", "hand_vs_range", "range_vs_range_equity", "fold_equity",
+            "showdown_equity", "reverse_implied_odds", "range_vs_range", "future_payoff", "playability"
         ]
         
         for street in ["preflop", "flop", "turn", "river"]:
@@ -391,8 +382,7 @@ class StreetHistoryAnalyzer:
         # 4. Extract and return the accurately calculated features for the self
         snapshot_features = {
             "effective_spr": additional_features.get("effective_spr", 0.0),
-            "hand_strength": additional_features.get("hand_strength", 0.0),
-            "equity_vs_range": additional_features.get("equity_vs_range", 0.0)
+            "hand_strength": additional_features.get("hand_strength", 0.0)
         }
         return snapshot_features
     

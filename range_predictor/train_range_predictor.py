@@ -41,8 +41,10 @@ class RangePredictor:
         self.device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model = model.to(self.device)
         
-        # Loss function - Binary Cross Entropy for each property
-        self.criterion = nn.BCELoss()
+        # --- START: TRAINER CHANGE ---
+        # Use Mean Squared Error for comparing continuous embedding vectors
+        self.criterion = nn.MSELoss()
+        # --- END: TRAINER CHANGE ---
         
         # Optimizer with weight decay for regularization
         self.optimizer = optim.Adam(
@@ -61,103 +63,49 @@ class RangePredictor:
         self.val_losses = []
         self.property_accuracies = []
     
-    def train_epoch(self, train_loader: DataLoader) -> Dict[str, float]:
+    def train_epoch(self, train_loader: DataLoader) -> float:
         """Train for one epoch."""
         self.model.train()
-        epoch_losses = {'total': 0.0}
-        num_batches = 0
+        total_loss = 0.0
         
-        for batch_idx, (features, hand_props) in enumerate(train_loader):
+        # --- START: TRAIN LOOP CHANGE ---
+        for features, target_embedding in train_loader:
             features = features.to(self.device)
+            target_embedding = target_embedding.to(self.device)
             
-            # Move hand properties to device
-            target_props = {}
-            for prop_name, prop_values in hand_props.items():
-                target_props[prop_name] = prop_values.to(self.device).unsqueeze(1)  # Add feature dimension
-            
-            # Forward pass
             self.optimizer.zero_grad()
-            predictions = self.model(features)
             
-            # Compute loss for each property
-            total_loss = 0.0
-            property_losses = {}
+            # The model now outputs a single embedding vector
+            predicted_embedding = self.model(features)
             
-            for prop_name in predictions.keys():
-                if prop_name in target_props:
-                    prop_loss = self.criterion(predictions[prop_name], target_props[prop_name])
-                    property_losses[prop_name] = prop_loss.item()
-                    total_loss += prop_loss
+            # Calculate the MSE loss between the two vectors
+            loss = self.criterion(predicted_embedding, target_embedding)
             
-            # Backward pass
-            total_loss.backward()
-            
-            # Gradient clipping to prevent exploding gradients
+            loss.backward()
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-            
             self.optimizer.step()
             
-            # Track losses
-            epoch_losses['total'] += total_loss.item()
-            for prop_name, loss in property_losses.items():
-                if prop_name not in epoch_losses:
-                    epoch_losses[prop_name] = 0.0
-                epoch_losses[prop_name] += loss
+            total_loss += loss.item()
             
-            num_batches += 1
-        
-        # Average losses
-        for key in epoch_losses:
-            epoch_losses[key] /= num_batches
-        
-        return epoch_losses
+        return total_loss / len(train_loader)
+        # --- END: TRAIN LOOP CHANGE ---
     
-    def validate_epoch(self, val_loader: DataLoader) -> Dict[str, float]:
+    def validate_epoch(self, val_loader: DataLoader) -> float:
         """Validate for one epoch."""
         self.model.eval()
-        epoch_losses = {'total': 0.0}
-        property_predictions = {prop: [] for prop in self.model.output_heads.keys()}
-        property_targets = {prop: [] for prop in self.model.output_heads.keys()}
-        num_batches = 0
-        
+        total_loss = 0.0
         with torch.no_grad():
-            for features, hand_props in val_loader:
+            # --- START: VALIDATION LOOP CHANGE ---
+            for features, target_embedding in val_loader:
                 features = features.to(self.device)
+                target_embedding = target_embedding.to(self.device)
                 
-                # Move hand properties to device
-                target_props = {}
-                for prop_name, prop_values in hand_props.items():
-                    target_props[prop_name] = prop_values.to(self.device).unsqueeze(1)
+                predicted_embedding = self.model(features)
+                loss = self.criterion(predicted_embedding, target_embedding)
+                total_loss += loss.item()
                 
-                # Forward pass
-                predictions = self.model(features)
-                
-                # Compute loss for each property
-                total_loss = 0.0
-                for prop_name in predictions.keys():
-                    if prop_name in target_props:
-                        prop_loss = self.criterion(predictions[prop_name], target_props[prop_name])
-                        total_loss += prop_loss
-                        
-                        # Collect predictions and targets for accuracy calculation
-                        property_predictions[prop_name].extend(predictions[prop_name].cpu().numpy())
-                        property_targets[prop_name].extend(target_props[prop_name].cpu().numpy())
-                
-                epoch_losses['total'] += total_loss.item()
-                num_batches += 1
-        
-        # Average losses
-        epoch_losses['total'] /= num_batches
-        
-        # Compute accuracies (predictions > 0.5 vs targets > 0.5)
-        accuracies = {}
-        for prop_name in property_predictions.keys():
-            if len(property_predictions[prop_name]) > 0:
-                pred_binary = np.array(property_predictions[prop_name]) > 0.5
-                target_binary = np.array(property_targets[prop_name]) > 0.5
-                accuracies[prop_name] = np.mean(pred_binary == target_binary)
-        
-        return epoch_losses, accuracies
+        return total_loss / len(val_loader)
+        # --- END: VALIDATION LOOP CHANGE ---
     
     def train(self, 
               train_loader: DataLoader,
@@ -186,36 +134,32 @@ class RangePredictor:
         
         for epoch in range(num_epochs):
             # Training
-            train_losses = self.train_epoch(train_loader)
-            self.train_losses.append(train_losses['total'])
+            train_loss = self.train_epoch(train_loader)
+            self.train_losses.append(train_loss)
             
             # Validation
             val_info = "No validation"
             if val_loader is not None:
-                val_losses, val_accuracies = self.validate_epoch(val_loader)
-                self.val_losses.append(val_losses['total'])
-                self.property_accuracies.append(val_accuracies)
+                val_loss = self.validate_epoch(val_loader)
+                self.val_losses.append(val_loss)
                 
                 # Learning rate scheduling
-                self.scheduler.step(val_losses['total'])
+                self.scheduler.step(val_loss)
                 
                 # Early stopping check
-                if val_losses['total'] < best_val_loss:
-                    best_val_loss = val_losses['total']
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
                     patience_counter = 0
                     # Save best model
                     self.save_model(save_path)
                 else:
                     patience_counter += 1
                 
-                val_info = f"Val Loss: {val_losses['total']:.4f}"
-                if val_accuracies:
-                    avg_acc = np.mean(list(val_accuracies.values()))
-                    val_info += f", Avg Acc: {avg_acc:.3f}"
+                val_info = f"Val Loss: {val_loss:.4f}"
             
             # Print progress
             if epoch % 10 == 0 or epoch < 5:
-                print(f"Epoch {epoch:3d}: Train Loss: {train_losses['total']:.4f}, {val_info}")
+                print(f"Epoch {epoch:3d}: Train Loss: {train_loss:.4f}, {val_info}")
             
             # Early stopping
             if val_loader is not None and patience_counter >= early_stop_patience:

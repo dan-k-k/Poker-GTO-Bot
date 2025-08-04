@@ -17,7 +17,7 @@ from poker_agents import GTOPokerNet
 # Import training sub-modules
 try:
     # Relative imports for package usage
-    from ._OLD_data_collector import DataCollector
+    from .data_collector import DataCollector
     from .training_utils import TrainingUtils, TrainingWatchdog
     from .action_selector import ActionSelector
     from .network_trainer import NetworkTrainer
@@ -26,7 +26,7 @@ try:
     from stats_tracker import StatsTracker
 except ImportError:
     # Direct imports for script execution
-    from Poker.trainingL1._OLD_data_collector import DataCollector
+    from data_collector import DataCollector
     from training_utils import TrainingUtils, TrainingWatchdog
     from action_selector import ActionSelector
     from network_trainer import NetworkTrainer
@@ -77,8 +77,8 @@ class NFSPTrainer:
         self.feature_extractor = FeatureExtractor(num_players=self.num_players)
         
         # 4. Initialize Networks
-        self.avg_pytorch_net = GTOPokerNet(input_size=694)
-        self.br_pytorch_net = GTOPokerNet(input_size=694)
+        self.avg_pytorch_net = GTOPokerNet(input_size=736)
+        self.br_pytorch_net = GTOPokerNet(input_size=736)
         
         # 5. Initialize Simulator with derived values
         self.stack_depth_simulator = None
@@ -362,8 +362,8 @@ class NFSPTrainer:
                 # Always track episode number
                 self.episode_numbers.append(episode)
                 
-                # Print episode session summary
-                self.data_collector.print_episode_summary()
+                # # Print episode session summary
+                # self.data_collector.print_episode_summary()
                 
                 # Track episodes for StatsTracker-based reporting
                 if not train_best_response:

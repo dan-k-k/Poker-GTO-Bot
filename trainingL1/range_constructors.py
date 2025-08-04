@@ -535,7 +535,6 @@ class RangeConstructor:
                     
         return combined
 
-
 class RangeConstructorNN:
     """
     Neural Network-based Range Constructor.
@@ -619,152 +618,83 @@ class RangeConstructorNN:
     
     def _construct_range_from_nn(self, features: List[float]) -> Dict[Tuple[str, str], float]:
         """
-        Construct range using neural network predictions.
-        
-        Args:
-            features: Complete feature vector for opponent
-            
-        Returns:
-            Range dictionary with NN-predicted weights
+        Construct range using the predicted hand embedding from the neural network.
         """
         # Convert features to tensor
-        features_tensor = torch.tensor(features, dtype=torch.float32).unsqueeze(0)
+        features_tensor = torch.tensor(features, dtype=torch.float32)
         
-        # Get predictions from the model
-        with torch.no_grad():
-            predictions = self.model(features_tensor)
+        # Get the predicted embedding vector from the model
+        predicted_embedding = self.model.predict_hand_embedding(features_tensor)
         
-        # Extract property probabilities
-        properties = {}
-        for prop_name, prob_tensor in predictions.items():
-            properties[prop_name] = prob_tensor.squeeze().item()
+        # Convert the tensor to a dictionary for easier use
+        embedding_dims = [
+            'pair_value', 'high_card_value', 'low_card_value', 'suitedness', 
+            'connectivity', 'broadway_potential', 'wheel_potential', 'mid_strength_potential'
+        ]
+        properties = {dim: value.item() for dim, value in zip(embedding_dims, predicted_embedding)}
         
-        # Build range based on predicted properties
+        # Build range based on the predicted embedding properties
         return self._build_range_from_properties(properties)
     
     def _build_range_from_properties(self, properties: Dict[str, float]) -> Dict[Tuple[str, str], float]:
         """
-        Build a range dictionary from predicted hand properties.
-        
-        Args:
-            properties: Dictionary of hand property probabilities
-            
-        Returns:
-            Range dictionary with appropriate weights
+        Build a range dictionary by scoring each hand against the predicted embedding.
         """
         range_dict = {}
         
-        # Start with baseline range (top 40% of hands)
-        baseline_cutoff = int(len(self.HAND_RANKINGS) * 0.4)
+        # Use a wide baseline of hands to score against
+        baseline_cutoff = int(len(self.HAND_RANKINGS) * 0.8) # Use top 80% to not miss bluffs
         baseline_hands = self.HAND_RANKINGS[:baseline_cutoff]
         
-        # Convert hand rankings to our format and apply NN adjustments
         for hand_str in baseline_hands:
-            # Get all card combinations for this hand
             hand_combos = self._hand_cache.get(hand_str, [])
             
-            for combo in hand_combos:
-                # Determine base weight (stronger hands get higher weight)
-                hand_index = self.HAND_RANKINGS.index(hand_str)
-                base_weight = 1.0 - (hand_index / len(self.HAND_RANKINGS))
-                
-                # Apply NN property adjustments
-                final_weight = self._adjust_weight_by_properties(
-                    hand_str, base_weight, properties
-                )
-                
-                # Only include hands with meaningful weight
-                if final_weight > 0.1:
-                    range_dict[combo] = final_weight
-        
-        # Normalize weights so they sum to reasonable total
-        if range_dict:
-            total_weight = sum(range_dict.values())
-            if total_weight > 0:
-                for hand in range_dict:
-                    range_dict[hand] /= total_weight
-                    range_dict[hand] *= len(range_dict) * 0.1  # Scale appropriately
+            # Get the true, objective embedding for this hand_str
+            true_embedding = self._get_true_embedding_for_hand(hand_str)
+            
+            # Calculate the "distance" or "similarity" between the predicted and true embeddings.
+            # A lower distance means the hand is a better fit for the predicted range.
+            # We use (1 - distance) as a weight, so higher similarity = higher weight.
+            distance = self._calculate_embedding_distance(properties, true_embedding)
+            weight = max(0, 1.0 - distance)
+            
+            if weight > 0.15: # Only include hands that are a reasonably good match
+                for combo in hand_combos:
+                    range_dict[combo] = weight
         
         return range_dict
     
-    def _adjust_weight_by_properties(self, hand_str: str, base_weight: float, 
-                                   properties: Dict[str, float]) -> float:
+    # --- NEW HELPER METHODS ---
+    
+    def _get_true_embedding_for_hand(self, hand_str: str) -> Dict[str, float]:
         """
-        Adjust hand weight based on NN-predicted properties.
-        
-        Args:
-            hand_str: Hand string like 'AA', 'AKs', etc.
-            base_weight: Base weight from hand strength
-            properties: Predicted hand properties
-            
-        Returns:
-            Adjusted weight for this hand
+        Generates the objective embedding for a given hand string (e.g., 'AKs').
+        This re-uses the logic from your classify_hand_properties function.
         """
-        multiplier = 1.0
+        # Note: This requires access to the classification logic.
+        from range_predictor.range_dataset import classify_hand_properties
         
-        # Check hand category and apply property multipliers
-        if self._is_premium_pair(hand_str):
-            multiplier *= (1.0 + properties.get('premium_pair', 0.0) * 2.0)
-        elif self._is_mid_pair(hand_str):
-            multiplier *= (1.0 + properties.get('mid_pair', 0.0) * 1.5)
-        elif self._is_small_pair(hand_str):
-            multiplier *= (1.0 + properties.get('small_pair', 0.0) * 1.2)
-        elif self._is_suited_broadway(hand_str):
-            multiplier *= (1.0 + properties.get('suited_broadway', 0.0) * 1.8)
-        elif self._is_offsuit_broadway(hand_str):
-            multiplier *= (1.0 + properties.get('offsuit_broadway', 0.0) * 1.4)
-        elif self._is_suited_connector(hand_str):
-            multiplier *= (1.0 + properties.get('suited_connector', 0.0) * 1.3)
-        elif self._is_suited_ace(hand_str):
-            multiplier *= (1.0 + properties.get('suited_ace', 0.0) * 1.1)
-        else:
-            # Bluff candidates or other hands
-            multiplier *= (1.0 + properties.get('bluff_candidate', 0.0) * 0.8)
+        rank_map = {'2':0, '3':1, '4':2, '5':3, '6':4, '7':5, '8':6, '9':7, 'T':8, 'J':9, 'Q':10, 'K':11, 'A':12}
         
-        return base_weight * multiplier
-    
-    def _is_premium_pair(self, hand_str: str) -> bool:
-        """Check if hand is a premium pair (TT+)."""
-        return hand_str in ['AA', 'KK', 'QQ', 'JJ', 'TT']
-    
-    def _is_mid_pair(self, hand_str: str) -> bool:
-        """Check if hand is a mid pair (66-99)."""
-        return hand_str in ['99', '88', '77', '66']
-    
-    def _is_small_pair(self, hand_str: str) -> bool:
-        """Check if hand is a small pair (22-55)."""
-        return hand_str in ['55', '44', '33', '22']
-    
-    def _is_suited_broadway(self, hand_str: str) -> bool:
-        """Check if hand is suited broadway (AKs-QJs)."""
-        return hand_str.endswith('s') and hand_str in ['AKs', 'AQs', 'AJs', 'KQs', 'KJs', 'QJs']
-    
-    def _is_offsuit_broadway(self, hand_str: str) -> bool:
-        """Check if hand is offsuit broadway (AKo-QJo)."""
-        return hand_str.endswith('o') and hand_str in ['AKo', 'AQo', 'AJo', 'KQo', 'KJo', 'QJo']
-    
-    def _is_suited_connector(self, hand_str: str) -> bool:
-        """Check if hand is a suited connector (fixed version)."""
-        if not hand_str.endswith('s') or len(hand_str) != 3:
-            return False
+        rank1 = rank_map[hand_str[0]]
+        rank2 = rank_map[hand_str[1]]
+        suited = len(hand_str) == 3 and hand_str[2] == 's'
         
-        # Use a complete rank map for all characters
-        full_rank_map = {'2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, 
-                         '9': 9, 'T': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14}
+        return classify_hand_properties(rank1, rank2, suited)
+
+    def _calculate_embedding_distance(self, pred_props: Dict[str, float], true_props: Dict[str, float]) -> float:
+        """
+        Calculates the weighted Mean Squared Error distance between two embeddings.
+        """
+        distance = 0.0
+        # Give more weight to important properties like pairs and suitedness
+        weights = {'pair_value': 2.0, 'suitedness': 1.5, 'high_card_value': 1.2}
         
-        rank1 = full_rank_map.get(hand_str[0])
-        rank2 = full_rank_map.get(hand_str[1])
-        
-        if rank1 is None or rank2 is None:
-            return False  # Invalid hand string
+        for key in pred_props:
+            pred = pred_props[key]
+            true = true_props[key]
+            weight = weights.get(key, 1.0)
+            distance += weight * ((pred - true) ** 2)
             
-        return abs(rank1 - rank2) == 1 and min(rank1, rank2) >= 5
-    
-    def _is_suited_ace(self, hand_str: str) -> bool:
-        """Check if hand is a suited ace (A5s-A2s)."""
-        if not hand_str.endswith('s') or len(hand_str) != 3 or hand_str[0] != 'A':
-            return False
-        
-        second_rank = hand_str[1]
-        return second_rank in ['5', '4', '3', '2']
+        return distance / len(pred_props)
     

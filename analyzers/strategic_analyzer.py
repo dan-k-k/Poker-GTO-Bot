@@ -3,8 +3,11 @@
 import copy
 import random
 from feature_contexts import StaticContext, DynamicContext
-from Poker.trainingL1.equity_calculator import EquityCalculator
-from Poker.trainingL1.range_constructors import RangeConstructorNN
+
+# Direct imports - no fallback to avoid circular imports
+from trainingL1.equity_calculator import EquityCalculator
+from trainingL1.range_constructors import RangeConstructorNN
+
 from .feature_utils import sanitize_features
 
 class StrategicAnalyzer:
@@ -41,7 +44,7 @@ class StrategicAnalyzer:
         self_perceived_range = self._predict_self_perceived_range(self_context)
 
         # Step 4: Use these ranges to calculate advanced metrics.
-        equity_vs_range = self._calculate_hand_vs_range_equity(self_context, opponent_range)
+        hand_vs_range = self._calculate_hand_vs_range(self_context, opponent_range)
         
         range_vs_range_equity = self._calculate_range_vs_range_equity(
             self_perceived_range, opponent_range, self_context.get('board_strings', [])
@@ -52,27 +55,25 @@ class StrategicAnalyzer:
         fold_equity = self._calculate_fold_equity(self_perceived_range, opponent_range, self_context)
         
         # Calculate equity delta (change from previous street)
-        equity_delta = self._calculate_equity_delta(self_context, equity_vs_range)
+        equity_delta = self._calculate_equity_delta(self_context, hand_vs_range)
 
         # *** ADD THE NEW RANGE-DRIVEN CALCULATIONS ***
         reverse_implied_odds = self._calculate_reverse_implied_odds(self_context, opponent_range)
         
         playability = self._calculate_playability(self_context, self_perceived_range)
         
-        # Showdown equity is the same as equity vs. range
-        showdown_equity = equity_vs_range
-
+        # *** ADD THE FINAL MISSING FEATURE ***
+        future_payoff = self._calculate_future_payoff(self_context, opponent_range)
+        
         return {
-            "equity_vs_range": equity_vs_range,
-            "range_vs_range_equity": range_vs_range_equity,
             "implied_odds": implied_odds,
+            "hand_vs_range": hand_vs_range,           # Keep for backward compatibility
             "fold_equity": fold_equity,
-            "equity_delta": equity_delta,
-            "reverse_implied_odds": reverse_implied_odds,  # NEW
-            "showdown_equity": showdown_equity,           # NEW  
-            "playability": playability,                   # NEW - was missing!
+            "showdown_equity": hand_vs_range,         # Alias for hand_vs_range
+            "reverse_implied_odds": reverse_implied_odds,
             "range_vs_range": range_vs_range_equity,      # Alias for compatibility
-            "future_payoff": implied_odds,                # Alias for compatibility
+            "future_payoff": future_payoff,
+            "playability": playability
         }
 
     def _predict_opponent_range(self, opponent_context: dict) -> dict:
@@ -248,7 +249,7 @@ class StrategicAnalyzer:
         
         return 0.5
     
-    def _calculate_hand_vs_range_equity(self, self_context: dict, opponent_range: dict) -> float:
+    def _calculate_hand_vs_range(self, self_context: dict, opponent_range: dict) -> float:
         """
         Calculates standard showdown equity (Hand vs. Range). This is the function
         that was previously in CurrentStreetAnalyzer.
@@ -298,51 +299,6 @@ class StrategicAnalyzer:
         
         return total_equity / matchups if matchups > 0 else 0.5
         
-    def _calculate_equity_vs_range(self, hole_cards: list, community_cards: list, 
-                                  opponent_stats: dict = None, opponent_action_history: list = None,
-                                  pot_size: int = 100) -> float:
-        """
-        Calculate equity vs opponent's estimated range.
-        """
-        # Fallback to hand_strength if equity system is not available
-        if not self.equity_calculator or not self.range_constructor:
-            return self._calculate_hand_strength(hole_cards, community_cards)
-        
-        # Convert card IDs to string format for equity calculator
-        try:
-            hole_strings = [self._card_id_to_string(card) for card in hole_cards[:2]]
-            board_strings = [self._card_id_to_string(card) for card in community_cards]
-            
-            # Use opponent stats and action history to construct their range
-            if opponent_stats and opponent_action_history:
-                opponent_range = self.range_constructor.construct_range(
-                    opponent_action_history, board_strings, pot_size, opponent_stats
-                )
-            else:
-                # Fallback to basic stats-based range
-                default_stats = {'vpip': 0.5, 'pfr': 0.2}  # Default loose-passive opponent
-                last_action = 1  # Assume opponent called
-                if opponent_action_history and len(opponent_action_history) > 0:
-                    last_action = opponent_action_history[-1].get('action', 1)
-                
-                opponent_range = self.range_constructor.construct_range_from_stats(
-                    default_stats, last_action
-                )
-            
-            # Calculate equity using the range
-            if opponent_range:
-                equity = self.equity_calculator.calculate_equity(
-                    hole_strings, board_strings, opponent_range, num_simulations=100
-                )
-                return equity
-            else:
-                # No valid range constructed, fallback to hand strength
-                return self._calculate_hand_strength(hole_cards, community_cards)
-                
-        except Exception:
-            # Any error in equity calculation, fallback to hand strength
-            return self._calculate_hand_strength(hole_cards, community_cards)
-
     def _calculate_implied_odds(self, self_context: dict, opponent_range: dict, self_perceived_range: dict) -> float:
         """
         NEW RANGE-DRIVEN IMPLIED ODDS CALCULATION
@@ -378,7 +334,7 @@ class StrategicAnalyzer:
         )
         
         # Get our current equity to understand improvement potential
-        current_equity = self._calculate_hand_vs_range_equity(self_context, opponent_range)
+        current_equity = self._calculate_hand_vs_range(self_context, opponent_range)
         
         # If we already have strong equity, limited implied odds potential
         if current_equity > 0.6:
@@ -499,7 +455,7 @@ class StrategicAnalyzer:
         opponent_draw_heavy = opp_composition['draws']
 
         # 3. Analyze Our Hand: Is it good, but vulnerable?
-        our_equity = self._calculate_hand_vs_range_equity(self_context, opponent_range)
+        our_equity = self._calculate_hand_vs_range(self_context, opponent_range)
         is_vulnerable_made_hand = 0.60 < our_equity < 0.85  # Good, but not a monster
 
         # Combine factors: Risk is highest when the board is dangerous, our hand is
@@ -598,161 +554,6 @@ class StrategicAnalyzer:
         
         return min(normalized_payoff, 1.0)
     
-    def _calculate_current_implied_odds(self, static_ctx: StaticContext, dynamic_ctx: DynamicContext) -> float:
-        """
-        Calculate current implied odds using proper board texture analysis.
-        Integrates with board analyzer for full calculation.
-        """
-        # CRITICAL FIX: Implied odds must be 0.0 on river (no more cards coming)
-        if static_ctx.stage == 3:  # River
-            return 0.0
-        
-        current_bets = static_ctx.game_state.current_bets
-        max_bet = max(current_bets) if current_bets else 0
-        my_bet = current_bets[static_ctx.seat_id]
-        to_call = max_bet - my_bet
-        pot = static_ctx.pot
-        
-        if to_call <= 0:
-            return 0.0
-        
-        # Basic pot odds
-        pot_odds = to_call / (pot + to_call)
-        
-        # Advanced future betting potential calculation
-        our_stack = static_ctx.game_state.stacks[static_ctx.seat_id]
-        active_players = [i for i in range(static_ctx.num_players) 
-                         if static_ctx.game_state.stacks[i] > 0 and i != static_ctx.seat_id]
-        
-        if not active_players:
-            return pot_odds
-        
-        # Calculate effective stack sizes (what we can actually win)
-        effective_stacks = []
-        for opp_id in active_players:
-            opp_stack = static_ctx.game_state.stacks[opp_id]
-            effective_stack = min(our_stack, opp_stack)  # Can only win what both players have
-            effective_stacks.append(effective_stack)
-        
-        # Future betting potential based on effective stacks and position
-        dealer_pos = static_ctx.game_state.dealer_pos
-        relative_position = (static_ctx.seat_id - dealer_pos) % static_ctx.num_players
-        position_multiplier = 1.0 + (0.3 * (1.0 - relative_position / static_ctx.num_players))
-        
-        # Stack-to-pot ratio consideration (SPR)
-        avg_effective_stack = sum(effective_stacks) / len(effective_stacks)
-        spr = avg_effective_stack / max(pot, 1)
-        
-        # SPR-based future betting potential
-        if spr >= 4:  # Deep stacks - high implied odds potential
-            stack_factor = min(3.0, 1.5 + spr * 0.2)
-        elif spr >= 2:  # Medium stacks - moderate potential
-            stack_factor = 1.0 + spr * 0.25
-        else:  # Shallow stacks - low potential
-            stack_factor = 0.5 + spr * 0.25
-        
-        # Board texture consideration for draw potential using board analyzer
-        draw_potential = 1.0
-        community = static_ctx.community
-        if len(community) >= 3:
-            board_texture = self.board_analyzer.analyze_texture(community)
-            
-            # Check for flush draws (2-3 cards of same suit)
-            has_flush_draw = any([
-                2 <= board_texture.spades_cards_present <= 3,
-                2 <= board_texture.hearts_cards_present <= 3,
-                2 <= board_texture.clubs_cards_present <= 3,
-                2 <= board_texture.diamonds_cards_present <= 3
-            ])
-            
-            # Check for straight draws (look for patterns with 2-4 cards)
-            has_straight_draw = any([
-                2 <= board_texture.A5_cards_present <= 4,
-                2 <= board_texture.S26_cards_present <= 4,
-                2 <= board_texture.S37_cards_present <= 4,
-                2 <= board_texture.S48_cards_present <= 4,
-                2 <= board_texture.S59_cards_present <= 4,
-                2 <= board_texture.S6T_cards_present <= 4,
-                2 <= board_texture.S7J_cards_present <= 4,
-                2 <= board_texture.S8Q_cards_present <= 4,
-                2 <= board_texture.S9K_cards_present <= 4,
-                2 <= board_texture.TA_cards_present <= 4
-            ])
-            
-            # Check for made hands (flushes/straights)
-            has_made_flush = any([
-                board_texture.spades_cards_present >= 3,
-                board_texture.hearts_cards_present >= 3,
-                board_texture.clubs_cards_present >= 3,
-                board_texture.diamonds_cards_present >= 3
-            ])
-            
-            has_made_straight = any([
-                board_texture.A5_cards_present >= 3,
-                board_texture.S26_cards_present >= 3,
-                board_texture.S37_cards_present >= 3,
-                board_texture.S48_cards_present >= 3,
-                board_texture.S59_cards_present >= 3,
-                board_texture.S6T_cards_present >= 3,
-                board_texture.S7J_cards_present >= 3,
-                board_texture.S8Q_cards_present >= 3,
-                board_texture.S9K_cards_present >= 3,
-                board_texture.TA_cards_present >= 3
-            ])
-            
-            # More draws possible = higher implied odds potential
-            if has_flush_draw or has_straight_draw:
-                draw_potential *= 1.4
-            elif has_made_flush or has_made_straight:
-                draw_potential *= 0.7  # Less implied odds when board is scary
-        
-        # Street-based adjustment (earlier streets have more implied odds potential)
-        stage = static_ctx.stage
-        street_multiplier = max(0.5, 1.3 - (stage * 0.2))  # Decreases each street
-        
-        # Opponent count factor (more opponents = more potential)
-        opponent_factor = min(1.5, 1.0 + len(active_players) * 0.1)
-        
-        # Calculate final implied odds
-        future_betting_factor = (stack_factor * position_multiplier * draw_potential * 
-                               street_multiplier * opponent_factor)
-        
-        implied_odds = pot_odds * min(future_betting_factor, 4.0)  # Cap at 4x pot odds
-        return min(implied_odds, 0.9)  # Cap at 90%
-    
-    def _calculate_enhanced_implied_odds(self, static_ctx: StaticContext, dynamic_ctx: DynamicContext, opponent_stats: dict = None) -> float:
-        """
-        Enhanced implied odds calculation that considers opponent's range and tendencies.
-        """
-        # CRITICAL FIX: Implied odds must be 0.0 on river (no more cards coming)
-        if static_ctx.stage == 3:  # River
-            return 0.0
-        
-        # Start with the existing calculation
-        base_implied_odds = self._calculate_current_implied_odds(static_ctx, dynamic_ctx)
-        
-        # If no opponent stats, return base calculation
-        if not opponent_stats:
-            return base_implied_odds
-        
-        # Adjust based on opponent's calling tendencies (WTSD = Went To Showdown)
-        wtsd = opponent_stats.get('wtsd', 0.25)
-        range_factor = 1.0
-        
-        if wtsd > 0.35:  # Calling station - higher implied odds
-            range_factor = 1.25
-        elif wtsd < 0.20:  # Tight player - lower implied odds
-            range_factor = 0.75
-        
-        # Also consider opponent's aggression frequency
-        aggr_freq = opponent_stats.get('aggression_frequency', 0.3)
-        if aggr_freq > 0.4:  # Aggressive opponent - higher implied odds potential
-            range_factor *= 1.1
-        elif aggr_freq < 0.2:  # Passive opponent - lower implied odds
-            range_factor *= 0.9
-        
-        return min(base_implied_odds * range_factor, 0.9)  # Cap at 90%
-    
     def _calculate_equity_delta(self, self_context: dict, current_equity: float) -> float:
         """Calculate change in equity from previous street."""
         static_ctx = self_context.get('static_ctx')
@@ -780,7 +581,7 @@ class StrategicAnalyzer:
         # Look up previous equity from history
         hand_key = f"hand_{history_tracker.get_hand_number()}"
         previous_equity = history_tracker.get_feature_value(
-            hand_key, previous_street, "equity_vs_range", current_equity
+            hand_key, previous_street, "hand_vs_range", current_equity
         )
         
         return current_equity - previous_equity

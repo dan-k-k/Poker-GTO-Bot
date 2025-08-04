@@ -76,50 +76,50 @@ class ActionSelector:
         return action, amount
     
     def _determine_bet_size(self, state, sizing_output, player_id, config) -> int:
-        """Generic bet size determination using configuration parameters."""
-        min_raise = self.env._min_raise_amount(player_id)
-        max_bet = state['stacks'][player_id]
+        """
+        THIS IS WHAT THE AGENT OUTPUTS.
+        Generic bet size determination using configuration parameters.
+        This version includes both the de-normalization bug fix AND the
+        strategic quadratic mapping for finer control over smaller bets.
+        """
+        # Step 1: Get the absolute legal boundaries for the bet in chips.
+        min_legal_raise_chips = self.env._min_raise_amount(player_id)
+        max_legal_raise_chips = state['stacks'][player_id]
         pot = state['pot']
+
+        if min_legal_raise_chips is None or min_legal_raise_chips > max_legal_raise_chips:
+            return max_legal_raise_chips
+
+        # Step 2: Get and apply strategic mapping to the network's [0, 1] output.
+        normalized_value = float(sizing_output[0])
+        normalized_value = max(0.0, min(1.0, normalized_value))
+
+        # --- STRATEGIC ENHANCEMENT ---
+        # Apply quadratic scaling to give the network finer control over smaller bet sizes.
+        normalized_value = normalized_value ** 2
+        # --- END ENHANCEMENT ---
+
+        # Step 3: De-normalize the value to the desired pot-relative size.
+        min_pot_relative = config['min_clamp']  # e.g., 0.05 (5%)
+        max_pot_relative = config['max_clamp']  # e.g., 2.2 (220%)
         
-        # Handle edge cases
-        if min_raise is None or min_raise > max_bet:
-            return max_bet  # All-in
-        if max_bet <= 0:
-            return 0
+        desired_pot_relative_size = min_pot_relative + normalized_value * (max_pot_relative - min_pot_relative)
+
+        # Step 4: Convert the desired pot-relative size into a raw chip amount.
+        desired_chips = int(pot * desired_pot_relative_size)
+
+        # Step 5: Enforce the absolute legal boundaries.
+        final_chips = max(min_legal_raise_chips, min(desired_chips, max_legal_raise_chips))
         
-        # Extract and process bet fraction
-        bet_fraction = float(sizing_output[0])
-        
-        # Add exploration noise during training
-        if self.current_episode < 500:
-            noise_strength = config['noise_strength'] * (1.0 - self.current_episode / 500)
-            bet_fraction += random.uniform(-noise_strength, noise_strength)
-        
-        # Clamp to configuration range
-        bet_fraction = max(config['min_clamp'], min(config['max_clamp'], bet_fraction))
-        
-        # Map to betting range
-        overbet_size = min(int(pot * config['overbet_mult']), max_bet)
-        bet_range = overbet_size - min_raise
-        
-        if bet_range > 0:
-            # Normalize bet_fraction to [0, 1] for interpolation
-            normalized_fraction = (bet_fraction - config['min_clamp']) / (config['max_clamp'] - config['min_clamp'])
-            continuous_size = min_raise + (normalized_fraction * bet_range)
-            final_size = int(continuous_size)
-        else:
-            final_size = min_raise
-        
-        # Final enforcement of legal bet amount
-        return max(min_raise, min(final_size, max_bet))
+        return int(final_chips)
     
     def _get_average_strategy_action(self, features, state) -> Tuple[int, Optional[int]]:
         """Get action from average strategy network (GTO approximation)."""
         bet_config = {
             'noise_strength': 0.1,
-            'min_clamp': 0.1,
-            'max_clamp': 2.0,
-            'overbet_mult': 2.0
+            'min_clamp': 0.05,
+            'max_clamp': 2.2,
+            'overbet_mult': 2.2
         }
         return self._get_network_action(self.avg_pytorch_net, features, state, bet_config)
     
@@ -137,9 +137,9 @@ class ActionSelector:
         """Determine GTO-focused bet size - legacy method for compatibility."""
         config = {
             'noise_strength': 0.1,
-            'min_clamp': 0.1,
-            'max_clamp': 2.0,
-            'overbet_mult': 2.0
+            'min_clamp': 0.05,
+            'max_clamp': 2.2,
+            'overbet_mult': 2.2
         }
         return self._determine_bet_size(state, sizing_output, player_id, config)
     
