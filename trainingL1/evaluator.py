@@ -33,7 +33,7 @@ class Evaluator:
             
             for _ in range(num_hands):
                 state = self.env.reset(preserve_stacks=False)
-                # ✅ FIX: Initialize the hand in the tracker, which also records the blind posts.
+                # Initialize the hand in the tracker, which also records the blind posts.
                 self.feature_extractor.history_tracker.initialize_hand_with_blinds(
                     self.env.state,
                     hand_number=_

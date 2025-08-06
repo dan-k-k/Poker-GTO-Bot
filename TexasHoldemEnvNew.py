@@ -55,7 +55,7 @@ class TexasHoldemEnv:
                     # Player is bust - permanently eliminated
                     stacks[player_id] = 0
             
-            # CRITICAL FIX: Check for tournament winner and RETURN IMMEDIATELY
+            # Check for tournament winner and RETURN IMMEDIATELY
             if len(surviving_players) <= 1:
                 if len(surviving_players) == 1:
                     winner = surviving_players[0]
@@ -177,8 +177,8 @@ class TexasHoldemEnv:
             stacks=stacks,
             current_bets=current_bets,
             pot=pot,
-            starting_pot_this_round=pot,  # ✅ FIX: Starting pot for preflop should be blinds total
-            starting_stacks_this_hand=initial_stacks,  # ✅ FIX: Starting stacks before blinds
+            starting_pot_this_round=pot,  # Starting pot for preflop should be blinds total
+            starting_stacks_this_hand=initial_stacks,  # Starting stacks before blinds
             active=active,
             all_in=all_in,
             acted=[False] * self.num_players,
@@ -319,7 +319,7 @@ class TexasHoldemEnv:
         else:  # BET/RAISE
             required = self._min_raise_amount(player)
             
-            # CRITICAL FIX: Strict action validation to prevent illegal under-raises
+            # Strict action validation to prevent illegal under-raises
             if required is None:
                 raise ValueError(f"Player {player} cannot raise (insufficient chips or illegal state)")
             
@@ -441,7 +441,7 @@ class TexasHoldemEnv:
         # Find the highest bet made by any active player in this round.
         highest_bet = max(self.state.current_bets[p] for p in active_players)
 
-        # CRITICAL FIX: Special preflop Big Blind option handling
+        # Special preflop Big Blind option handling
         if self.state.stage == 0:  # Preflop only
             # BB gets option if they haven't acted and their bet equals the big blind (no raise)
             bb_pos = self.state.bb_pos
@@ -455,7 +455,7 @@ class TexasHoldemEnv:
         if highest_bet == 0:
             players_who_can_act = [p for p in active_players if not self.state.all_in[p]]
             return all(self.state.acted[p] for p in players_who_can_act)
-        
+
         # If there is a bet, the street is over if every active player has
         # either matched the highest bet or is all-in.
         for p in active_players:

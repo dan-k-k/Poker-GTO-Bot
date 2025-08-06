@@ -34,8 +34,6 @@ class StackDepthSimulator:
         self.session_length = session_length
         self.big_blind = big_blind
         
-        # ✅ --- START: Convert all BB values to CHIP values immediately ---
-        # This fixes the bug where BB values were used as chip values
         self.mean_stack_chips = int(mean_stack_bb * self.big_blind)
         self.std_stack_chips = int(std_stack_bb * self.big_blind)
         self.min_stack_chips = int(min_stack_bb * self.big_blind)
@@ -44,7 +42,6 @@ class StackDepthSimulator:
         self.mean_stack_bb = mean_stack_bb
         self.std_stack_bb = std_stack_bb
         self.min_stack_bb = min_stack_bb
-        # ✅ --- END: Conversion ---
         
         # Session tracking
         self.current_session_hand = 0
@@ -113,7 +110,6 @@ class StackDepthSimulator:
     def generate_asymmetric_stacks(self) -> Tuple[int, int]:
         """
         Generate asymmetric stack sizes using Gaussian distribution in CHIPS.
-        Fixed: Now uses proper chip values instead of BB values.
         
         Returns:
             Tuple of (player1_stack, player2_stack) ensuring total = total_chips

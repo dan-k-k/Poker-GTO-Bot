@@ -47,9 +47,7 @@ class NFSPTrainer:
                  session_length=20, std_stack_bb=35, min_stack_bb_percent=0.15,
                  enable_stack_depth_simulation=True, loss_weight_config='default',
                  profit_reward_weight=0.7, equity_reward_weight=0.3):
-        
-        # 💡 --- START: Centralized Configuration ---
-        
+                
         # 1. Core Parameters (single source of truth)
         self.num_players = num_players
         self.big_blind_chips = big_blind_chips
@@ -91,9 +89,7 @@ class NFSPTrainer:
                 min_stack_bb=min_stack_bb,
                 big_blind=self.big_blind_chips
             )
-        
-        # 💡 --- END: Centralized Configuration ---
-        
+                
         # 🎯 Reward Shaping Weights - Tunable hyperparameters
         self.profit_reward_weight = profit_reward_weight
         self.equity_reward_weight = equity_reward_weight
@@ -215,7 +211,6 @@ class NFSPTrainer:
             
             # Wrap each episode with watchdog to detect freezes/infinite loops
             with TrainingWatchdog(seconds=60):
-                    # ================== START: EPISODE RESET FIX ==================
                 #
                 # EPISODE RESET LOGIC: Ensure every episode starts with a fresh, playable scenario.
                 # This clears the board from the previous episode's results and prevents infinite loops.
@@ -232,7 +227,6 @@ class NFSPTrainer:
                     self.env.reset(preserve_stacks=False)
                     print(f"DEBUG: 🔄 Standard reset for episode (no stack depth simulation)")
                 #
-                # =================== END: EPISODE RESET FIX ===================
                 
                 # Reset session tracking for new episode
                 self.data_collector.reset_session_tracking()

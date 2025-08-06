@@ -18,7 +18,7 @@ class StreetHistoryAnalyzer:
     """
     
     def __init__(self):
-        # 💡 DRY PRINCIPLE: Reuse CurrentStreetAnalyzer logic instead of duplicating
+        # Reuse CurrentStreetAnalyzer logic instead of duplicating
         self.current_street_analyzer = CurrentStreetAnalyzer()
     
     def save_street_snapshot(self, action_log: list, static_ctx: StaticContext, dynamic_ctx: DynamicContext, 
@@ -51,13 +51,13 @@ class StreetHistoryAnalyzer:
         # Combine all data and save to HistoryTracker
         final_snapshot = {**sequence_data, **stack_data, **additional_data}
         
-        # ✅ If strategic features were calculated, add them to the snapshot
+        # If strategic features were calculated, add them to the snapshot
         if strategic_features:
             final_snapshot.update(strategic_features)
         
-        # --- THE FIX: Add raw action log for deep pattern analysis ---
+        # --- Add raw action log for deep pattern analysis ---
         final_snapshot['raw_action_log'] = action_log
-        # --- END THE FIX ---
+        # ------
         
         dynamic_ctx.history_tracker.save_snapshot(hand_key, street, final_snapshot)
     
@@ -242,9 +242,9 @@ class StreetHistoryAnalyzer:
     
     def _process_action_log_for_history(self, action_log: list, static_ctx: StaticContext, dynamic_ctx: DynamicContext) -> dict:
         """
-        💡 DRY PRINCIPLE: Reuse CurrentStreetAnalyzer logic instead of duplicating calculations.
+        Reuse CurrentStreetAnalyzer logic instead of duplicating calculations.
         
-        ✅ FIX: Create a corrected context for historical calculation, as the passed-in
+        Create a corrected context for historical calculation, as the passed-in
         static_ctx reflects the END of the street, not the beginning.
         
         Args:
@@ -257,7 +257,7 @@ class StreetHistoryAnalyzer:
         """
         from .action_sequencer import ActionSequencer
         
-        # ✅ FIX: Create a corrected context for historical calculation, as the passed-in
+        # Create a corrected context for historical calculation, as the passed-in
         # static_ctx reflects the END of the street, not the beginning.
         
         # 1. Calculate the true starting pot by working backward from the final pot.
@@ -280,7 +280,7 @@ class StreetHistoryAnalyzer:
         
         summary = {}
         
-        # 💡 DRY: Use existing CurrentStreetAnalyzer for ALL players
+        # Use existing CurrentStreetAnalyzer for ALL players
         for seat_id in range(static_ctx.num_players):
             prefix = f"seat_{seat_id}_"
             
@@ -303,8 +303,8 @@ class StreetHistoryAnalyzer:
     
     def _get_final_stack_state_for_history(self, action_log: list, static_ctx: StaticContext, dynamic_ctx: DynamicContext) -> dict:
         """
-        💡 DRY PRINCIPLE: Reuse CurrentStreetAnalyzer stack logic with history-specific additions.
-        ✅ FIX: Correctly calculate commitment features using action_log instead of stale current_bets.
+        Reuse CurrentStreetAnalyzer stack logic with history-specific additions.
+        Correctly calculate commitment features using action_log instead of stale current_bets.
         """
         summary = {}
         
@@ -319,7 +319,7 @@ class StreetHistoryAnalyzer:
         total_wagered_this_street = sum(amount for _, _, amount in action_log if amount)
         true_starting_pot = final_pot - total_wagered_this_street
         
-        # 💡 DRY: Use existing CurrentStreetAnalyzer for ALL players
+        # Use existing CurrentStreetAnalyzer for ALL players
         for seat_id in range(static_ctx.num_players):
             prefix = f"seat_{seat_id}_"
             
@@ -335,7 +335,7 @@ class StreetHistoryAnalyzer:
                                'current_street_commitment_vs_starting_stack']:
                     summary[f"{prefix}{key}"] = value
             
-            # ✅ FIX: Re-calculate commitment features using the reliable action_log
+            # Re-calculate commitment features using the reliable action_log
             
             # 1. Sum the total bet for this player on this street from the log
             player_total_bet_this_street = sum(
@@ -369,7 +369,7 @@ class StreetHistoryAnalyzer:
     
     def _get_final_additional_state_for_history(self, static_ctx: StaticContext, dynamic_ctx: DynamicContext) -> dict:
         """
-        ✅ FIX: Explicitly calculates features from the self's perspective,
+        Explicitly calculates features from the self's perspective,
         regardless of who acted last on the street.
         """
         self_seat_id = 0

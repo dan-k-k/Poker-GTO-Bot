@@ -328,7 +328,7 @@ class HandEventIdentifier:
                 events[f'fold_to_cbet_{street_name}_opportunity'] = True
                 events[f'fold_to_cbet_{street_name}_action'] = folded
         
-        # CRITICAL FIX: Add general postflop aggression tracking
+        # Add general postflop aggression tracking
         all_postflop_actions = flop_actions + turn_actions + river_actions
         if all_postflop_actions:
             events['had_postflop_action'] = True

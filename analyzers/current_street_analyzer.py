@@ -105,10 +105,10 @@ class CurrentStreetAnalyzer:
         
         
         for action_seat_id, action_type, amount in action_sequence:
-            # ✅ NEW: Calculate stack BEFORE this action to check for all-ins
+            # Calculate stack BEFORE this action to check for all-ins
             stack_before_action = starting_stacks_this_street[action_seat_id] - wagered_this_street[action_seat_id]
             
-            # ✅ FIX: Calculate pot BEFORE updating it for "Raise BY" accuracy
+            # Calculate pot BEFORE updating it for "Raise BY" accuracy
             # Track this player's specific actions BEFORE updating pot state
             if action_seat_id == seat_id:
                 # Record action for strategic pattern detection
@@ -122,11 +122,11 @@ class CurrentStreetAnalyzer:
                     raised_count += 1.0
                     total_raise_amount += amount
                     
-                    # ✅ NEW: Check for All-In (use small tolerance for floating point safety)
+                    # Check for All-In (use small tolerance for floating point safety)
                     if amount >= stack_before_action - 0.1:
                         did_go_all_in = 1.0
                     
-                    # ✅ "Raise BY" Calculation: amount / pot_at_current_moment
+                    # "Raise BY" Calculation: amount / pot_at_current_moment
                     if pot_at_action > 0:
                         # 'amount' represents the chips being added (raise BY amount)
                         # pot_at_action is the pot BEFORE this player's action
@@ -154,7 +154,7 @@ class CurrentStreetAnalyzer:
         else:
             avg_raise_pct_of_pot = 0.0
         
-        # ✅ FIXED: Calculate "Aggressive Commitment" - only counts wagers up to last aggressive action
+        # Calculate "Aggressive Commitment" - only counts wagers up to last aggressive action
         aggro_commit_total = 0.0
         
         # Find the index of the player's last aggressive action
@@ -259,7 +259,7 @@ class CurrentStreetAnalyzer:
         # Starting pot this street calculation
         # The pot in game_state represents the starting pot before current street betting
         # This is the pot that players are betting into
-        starting_pot_this_street = static_ctx.game_state.starting_pot_this_round # <--- ✅ FIX
+        starting_pot_this_street = static_ctx.game_state.starting_pot_this_round # 
         
         current_street_commitment_vs_starting_pot = current_street_commitment / max(starting_pot_this_street, 1)
         
@@ -267,7 +267,7 @@ class CurrentStreetAnalyzer:
         player_total_invested = dynamic_ctx.history_tracker.get_player_investment_all()
         if seat_id < len(player_total_invested):
             total_invested_all_streets = player_total_invested[seat_id]
-            # ✅ FIX: Get the true starting stack directly from game state for this hand
+            # Get the true starting stack directly from game state for this hand
             starting_stack_this_hand = static_ctx.game_state.starting_stacks_this_hand[seat_id]
             # Starting stack this street = stack before making any bets this street
             # This is the stack the player had at the beginning of this betting round
@@ -282,7 +282,7 @@ class CurrentStreetAnalyzer:
             
             # Total commitment across all streets
             total_commitment = total_invested_all_streets / max(starting_stack_this_hand, 1)
-            # ✅ FIX: Normalize total_commitment_bb like other BB features (0-1 scale)
+            # Normalize total_commitment_bb like other BB features (0-1 scale)
             total_commitment_bb_raw = total_invested_all_streets / max(big_blind, 1)
             total_commitment_bb = min(total_commitment_bb_raw / 200.0, 1.0)  # Normalize over 200BB scale
         else:
@@ -423,7 +423,7 @@ class CurrentStreetAnalyzer:
             betting_rounds = 0
             action_sequence = []
         
-        # ✅ FIXED "is_facing" LOGIC
+        # "is_facing" LOGIC
         # A player is only "facing a check" if there is no bet AND someone has acted before them.
         is_facing_check = 1.0 if max_bet == 0 and len(action_sequence) > 0 else 0.0
         is_facing_bet = 1.0 if max_bet > 0 and to_call > 0 else 0.0
@@ -484,7 +484,7 @@ class CurrentStreetAnalyzer:
         Returns (last_pot_odds_faced, last_call_cost_faced).
         """
         try:
-            # ✅ FIX: Get the action sequence from the live ActionSequencer
+            # Get the action sequence from the live ActionSequencer
             if action_sequencer is None:
                 return 0.0, 0.0
                 
@@ -664,7 +664,7 @@ class CurrentStreetAnalyzer:
         if first_aggressive_action_seat != seat_id:
             return 0.0
         
-        # ✅ FIX: Use the shared helper for consistent and correct OOP check
+        # Use the shared helper for consistent and correct OOP check
         if not self._is_out_of_position(seat_id, static_ctx):
             return 0.0
         
@@ -706,7 +706,7 @@ class CurrentStreetAnalyzer:
         if current_stage < 2:  # Need turn or river
             return 0.0
         
-        # ✅ FIX: Use the shared helper for consistent and correct position check
+        # Use the shared helper for consistent and correct position check
         # Float bets are made by the in-position player
         if self._is_out_of_position(seat_id, static_ctx):
             return 0.0
@@ -723,12 +723,12 @@ class CurrentStreetAnalyzer:
 
         # Position check already done above - this is redundant
             
-        # --- THE FIX: Get previous street's RAW action log from HistoryTracker ---
+        # --- Get previous street's RAW action log from HistoryTracker ---
         hand_key = f"hand_{dynamic_ctx.history_tracker.get_hand_number()}"
         prev_street_name = 'flop' if current_stage == 2 else 'turn'
         prev_street_snapshot = dynamic_ctx.history_tracker.get_snapshot(hand_key, prev_street_name)
         prev_street_log = prev_street_snapshot.get('raw_action_log', [])
-        # --- END THE FIX ---
+        # ------
 
         if not prev_street_log:
             return 0.0

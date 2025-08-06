@@ -72,7 +72,7 @@ class NetworkTrainer:
         if len(self.reservoir_buffer) < self.reservoir_buffer.maxlen:
             self.reservoir_buffer.append(experience)
         else:
-            # 💡 TRUE RESERVOIR SAMPLING FIX:
+            # TRUE RESERVOIR SAMPLING
             # Instead of always removing the oldest (popleft), replace a RANDOM element.
             # This keeps old, diverse strategies in the buffer much longer.
             idx_to_replace = random.randint(0, len(self.reservoir_buffer) - 1)
