@@ -50,10 +50,8 @@ class RangeNetwork(nn.Module):
         
         self.feature_layers = nn.Sequential(*layers)
         
-        # --- START: ARCHITECTURE CHANGE ---
         # Replace the multiple output heads with a single head for the embedding vector.
         self.embedding_head = nn.Linear(prev_dim, embedding_dim)
-        # --- END: ARCHITECTURE CHANGE ---
         
         # Initialize weights
         self._initialize_weights()
@@ -77,11 +75,9 @@ class RangeNetwork(nn.Module):
         """
         x = self.feature_layers(features)
         
-        # --- START: FORWARD PASS CHANGE ---
         # Output the embedding vector. Use tanh to constrain outputs to the [-1, 1] range.
         embedding = torch.tanh(self.embedding_head(x))
         return embedding
-        # --- END: FORWARD PASS CHANGE ---
     
     def predict_hand_embedding(self, features: torch.Tensor) -> torch.Tensor:
         """

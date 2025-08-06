@@ -140,7 +140,7 @@ class DataCollector:
                 # Get action from appropriate policy
                 if current_player == 0:  # Primary agent
                     features, schema = self.feature_extractor.extract_features(
-                        self.env.state, 0, 
+                        self.env.state, 0, role = p0_role,
                         opponent_stats=None if p0_role == "AS" else opponent_stats,
                         full_hand_action_history=opponent_action_history
                     )
@@ -162,8 +162,9 @@ class DataCollector:
                     
                 else:  # Opponent
                     # Use the NEW, simpler feature extraction that doesn't need peeking
+                    p1_role = "BR" if p0_role == "AS" else "AS"
                     features_before, schema_before = self.feature_extractor.extract_features(
-                        self.env.state, 1, 
+                        self.env.state, 1, role=p1_role,
                         opponent_stats=(self.stats_tracker.get_player_percentages("average_strategy_v1") if self.stats_tracker else {}),
                         full_hand_action_history=None
                     )
@@ -229,6 +230,7 @@ class DataCollector:
                             should_log_hand, hand_log, current_episode, initial_stack)
             
             hand_profit = self.env.state.stacks[0] - initial_stack
+            # print('hand_profit', hand_profit)
             if hand_profit > 0:
                 wins += 1
             
@@ -267,7 +269,7 @@ class DataCollector:
     def _should_log_hand(self, hand_num: int, current_episode: int) -> bool:
         """Determine if this hand should be logged."""
         is_regular_log_hand = (hand_num % 49 == 0)
-        is_dump_watch_episode = (current_episode == 11)
+        is_dump_watch_episode = (current_episode == 100)
         return is_regular_log_hand or is_dump_watch_episode
 
     def _update_street_logging(self, state: Dict, current_street: str, hand_log: List[str]) -> str:
@@ -293,7 +295,7 @@ class DataCollector:
     def _handle_exhaustive_dump(self, schema, current_episode: int, p0_role: str, hand_log: List[str]):
         """Handle intelligent exhaustive dump for interesting scenarios."""
         dump_key = f"{p0_role}_{current_episode}"
-        is_dump_watch_episode = (current_episode == 11)
+        is_dump_watch_episode = (current_episode == 100)
         
         if (is_dump_watch_episode and 
             dump_key not in self.exhaustive_dump_triggered and
@@ -377,8 +379,9 @@ class DataCollector:
         
         # Get the final schema which includes the calculated strategic features
         as_stats = self.stats_tracker.get_player_percentages("average_strategy_v1") if self.stats_tracker else {}
+        agent_role = "BR" if opponent_stats else "AS"
         _, final_schema = self.feature_extractor.extract_features(
-            self.env.state, 0, opponent_stats=as_stats, full_hand_action_history=opponent_action_history
+            self.env.state, 0, role=agent_role, opponent_stats=as_stats, full_hand_action_history=opponent_action_history
         )
         
         # Convert the strategic features object to a dict to be saved
@@ -436,19 +439,24 @@ class DataCollector:
                 exp['session_hand'] = session_info['session_hand']
         
         # Write hand log if needed
-        if should_log_hand and hand_log:
-            pot_size = final_state.get('pot', 0)
-            hand_log.append(f"  (Pot: {pot_size})")
-            
+        if should_log_hand and hand_log:            
             if self.env.state.winners:
                 winner_str = "P0" if 0 in self.env.state.winners else "P1"
-                hand_log.append(f"- SHOWDOWN: {winner_str} wins pot of {pot_size}.")
+                # The profit for P0 is the amount won.
+                pot_won = hand_profit if winner_str == "P0" else -hand_profit
+                
+                # Check if anyone actually won (pot could be split)
+                if pot_won > 0:
+                    hand_log.append(f"- HAND END: {winner_str} wins pot of {pot_won}.")
+                else:
+                    # Handle splits or no-profit scenarios
+                    hand_log.append("- HAND END: Pot split or no profit.")
             
             try:
                 with open("training_output/hand_histories.log", "a") as f:
                     f.write("\n".join(hand_log) + "\n\n")
             except:
-                pass  # Don't crash training if logging fails
+                pass
 
     # === UTILITY METHODS ===
     

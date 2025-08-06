@@ -322,7 +322,7 @@ class FeatureExtractor:
             'history_tracker': self.history_tracker  # Add history tracker for delta calculations
         }
 
-    def extract_features(self, game_state: GameState, seat_id: int, 
+    def extract_features(self, game_state: GameState, seat_id: int, role: str,
                         opponent_stats: Dict = None, full_hand_action_history: Dict = None) -> Tuple[np.ndarray, PokerFeatureSchema]:
         """
         Main orchestration method. Follows a clean, direct 3-phase process.
@@ -338,7 +338,9 @@ class FeatureExtractor:
         """
         self_seat_id = seat_id
         opponent_seat_id = 1 - seat_id if hasattr(game_state, 'num_players') and game_state.num_players == 2 else (seat_id + 1) % 2
-        
+        if role == "AS":
+            opponent_stats = None
+
         # === PHASE 1: Build the Complete Non-Leaky Schema ===
         # This schema contains all non-leaky features (both public and private)
         final_schema = self._create_initial_schema(game_state, self_seat_id, opponent_stats)

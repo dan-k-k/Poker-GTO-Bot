@@ -41,10 +41,8 @@ class RangePredictor:
         self.device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model = model.to(self.device)
         
-        # --- START: TRAINER CHANGE ---
         # Use Mean Squared Error for comparing continuous embedding vectors
         self.criterion = nn.MSELoss()
-        # --- END: TRAINER CHANGE ---
         
         # Optimizer with weight decay for regularization
         self.optimizer = optim.Adam(
@@ -68,7 +66,7 @@ class RangePredictor:
         self.model.train()
         total_loss = 0.0
         
-        # --- START: TRAIN LOOP CHANGE ---
+        # --- TRAIN LOOP CHANGE ---
         for features, target_embedding in train_loader:
             features = features.to(self.device)
             target_embedding = target_embedding.to(self.device)
@@ -88,14 +86,13 @@ class RangePredictor:
             total_loss += loss.item()
             
         return total_loss / len(train_loader)
-        # --- END: TRAIN LOOP CHANGE ---
     
     def validate_epoch(self, val_loader: DataLoader) -> float:
         """Validate for one epoch."""
         self.model.eval()
         total_loss = 0.0
         with torch.no_grad():
-            # --- START: VALIDATION LOOP CHANGE ---
+            # --- VALIDATION LOOP CHANGE ---
             for features, target_embedding in val_loader:
                 features = features.to(self.device)
                 target_embedding = target_embedding.to(self.device)
@@ -105,7 +102,6 @@ class RangePredictor:
                 total_loss += loss.item()
                 
         return total_loss / len(val_loader)
-        # --- END: VALIDATION LOOP CHANGE ---
     
     def train(self, 
               train_loader: DataLoader,
@@ -207,7 +203,7 @@ def main():
     parser.add_argument('--batch_size', type=int, default=64, help='Batch size for training')
     parser.add_argument('--epochs', type=int, default=100, help='Number of training epochs')
     parser.add_argument('--learning_rate', type=float, default=0.001, help='Learning rate')
-    parser.add_argument('--feature_dim', type=int, default=611, help='Feature vector dimension')
+    parser.add_argument('--feature_dim', type=int, default=498, help='Feature vector dimension')
     parser.add_argument('--train_split', type=float, default=0.8, help='Training data split ratio')
     
     args = parser.parse_args()

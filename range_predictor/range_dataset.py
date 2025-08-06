@@ -134,13 +134,11 @@ class RangeDataset(Dataset):
             features = self._normalize_features(features)
         features_tensor = torch.from_numpy(features)
         
-        # --- START: DATASET GETITEM CHANGE ---
         # Create a single target tensor from the dictionary
         target_values = [item['hand_properties'].get(dim, 0.0) for dim in self.hand_properties]
         target_tensor = torch.tensor(target_values, dtype=torch.float32)
         
         return features_tensor, target_tensor
-        # --- END: DATASET GETITEM CHANGE ---
     
     def get_sample_info(self) -> Dict:
         """Get information about the dataset."""
@@ -239,7 +237,6 @@ def classify_hand_properties(rank1: int, rank2: int, suited: bool) -> Dict[str, 
     # Ensure rank1 >= rank2 for consistency
     high_rank, low_rank = max(rank1, rank2), min(rank1, rank2)
     
-    # --- START: NEW EMBEDDING LOGIC ---
     properties = {
         # Pair Value: -1.0 for non-pairs, 0.0 for 22, 1.0 for AA.
         'pair_value': (high_rank / 12.0) if high_rank == low_rank else -1.0,
@@ -265,7 +262,6 @@ def classify_hand_properties(rank1: int, rank2: int, suited: bool) -> Dict[str, 
         # Mid Strength Potential: Captures middle-strength hands like mid pairs and decent broadway cards.
         'mid_strength_potential': ((high_rank + low_rank) / 24.0) * (1.0 if suited else 0.8)
     }
-    # --- END: NEW EMBEDDING LOGIC ---
     
     return properties
 

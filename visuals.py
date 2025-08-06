@@ -205,7 +205,7 @@ class PokerTableWidget(QWidget):
             stack_font_metrics = QFontMetrics(stack_font) # Get font metrics for stack
             stack_bounding_rect = stack_font_metrics.boundingRect(stack_text)
             
-            # --- MODIFIED: Position stack text symmetrically relative to name ---
+            # --- Position stack text symmetrically relative to name ---
             stack_offset_from_name_y = int(0.017 * height) # Fixed vertical offset between name and stack
             
             # Calculate the Y position for the stack text
