@@ -14,25 +14,14 @@ from TexasHoldemEnvNew import TexasHoldemEnv
 from feature_extractor import FeatureExtractor
 from poker_agents import GTOPokerNet
 
-# Import training sub-modules
-try:
-    # Relative imports for package usage
-    from .data_collector import DataCollector
-    from .training_utils import TrainingUtils, TrainingWatchdog
-    from .action_selector import ActionSelector
-    from .network_trainer import NetworkTrainer
-    from .evaluator import Evaluator
-    from .stack_depth_simulator import StackDepthSimulator
-    from stats_tracker import StatsTracker
-except ImportError:
-    # Direct imports for script execution
-    from data_collector import DataCollector
-    from training_utils import TrainingUtils, TrainingWatchdog
-    from action_selector import ActionSelector
-    from network_trainer import NetworkTrainer
-    from evaluator import Evaluator
-    from stack_depth_simulator import StackDepthSimulator
-    from stats_tracker import StatsTracker
+# Use consistent, package-aware relative imports
+from .data_collector import DataCollector
+from .training_utils import TrainingUtils, TrainingWatchdog
+from .action_selector import ActionSelector
+from .network_trainer import NetworkTrainer
+from .evaluator import Evaluator
+from .stack_depth_simulator import StackDepthSimulator
+from stats_tracker import StatsTracker
 
 
 class NFSPTrainer:
@@ -46,7 +35,8 @@ class NFSPTrainer:
     def __init__(self, num_players=2, mean_stack_bb=100, big_blind_chips=2, 
                  session_length=20, std_stack_bb=35, min_stack_bb_percent=0.15,
                  enable_stack_depth_simulation=True, loss_weight_config='default',
-                 profit_reward_weight=0.7, equity_reward_weight=0.3):
+                 profit_reward_weight=0.7, equity_reward_weight=0.3,
+                 bootstrap_episodes=10, br_frequency=2, as_frequency=1):
                 
         # 1. Core Parameters (single source of truth)
         self.num_players = num_players
@@ -75,8 +65,8 @@ class NFSPTrainer:
         self.feature_extractor = FeatureExtractor(num_players=self.num_players)
         
         # 4. Initialize Networks
-        self.avg_pytorch_net = GTOPokerNet(input_size=736)
-        self.br_pytorch_net = GTOPokerNet(input_size=736)
+        self.avg_pytorch_net = GTOPokerNet(input_size=790)
+        self.br_pytorch_net = GTOPokerNet(input_size=790)
         
         # 5. Initialize Simulator with derived values
         self.stack_depth_simulator = None
@@ -93,6 +83,15 @@ class NFSPTrainer:
         # 🎯 Reward Shaping Weights - Tunable hyperparameters
         self.profit_reward_weight = profit_reward_weight
         self.equity_reward_weight = equity_reward_weight
+        
+        # 🎯 Training Schedule Parameters - Configurable cycle settings
+        self.bootstrap_episodes = bootstrap_episodes
+        self.br_frequency = br_frequency
+        self.as_frequency = as_frequency
+        
+        print(f"🎯 Training Schedule:")
+        print(f"   Bootstrap: {bootstrap_episodes} BR episodes")
+        print(f"   Cycle: {br_frequency} BR : {as_frequency} AS")
         
         # Initialize comprehensive stats tracker for opponent modeling
         stats_path = os.path.join('training_output', 'nfsp_training_stats.json')
@@ -112,12 +111,47 @@ class NFSPTrainer:
         self.as_stat_history = []
         self.br_stat_history = []
         
-        # Initialize modular components
-        self.data_collector = DataCollector(self.env, self.feature_extractor, self.stack_depth_simulator, self.stats_tracker,
-                                          profit_weight=self.profit_reward_weight, equity_weight=self.equity_reward_weight)
+        # --- START REFACTOR ---
+        # 1. Create the core, shared components here, ONCE.
+        # Use RangeConstructorNN as the main entry point - it will automatically
+        # fallback to heuristics when the NN model isn't trained yet.
+        from .range_constructors import RangeConstructorNN
+        from .equity_calculator import EquityCalculator
+        
+        self.range_constructor = RangeConstructorNN()  # Smart controller with fallback
+        self.equity_calculator = EquityCalculator()
+
+        # 2. Pass these shared components to the modules that need them.
+        self.feature_extractor = FeatureExtractor(
+            num_players=self.num_players,
+            range_constructor=self.range_constructor,
+            equity_calculator=self.equity_calculator
+        )
+        
+        # Initialize modular components with shared components
+        self.data_collector = DataCollector(
+            self.env, 
+            self.feature_extractor, 
+            self.stack_depth_simulator, 
+            self.stats_tracker,
+            profit_weight=self.profit_reward_weight, 
+            equity_weight=self.equity_reward_weight,
+            # Pass the shared components to the DataCollector as well
+            range_constructor=self.range_constructor,
+            equity_calculator=self.equity_calculator
+        )
+        # --- END REFACTOR ---
+        
         self.action_selector = ActionSelector(self.env, self.avg_pytorch_net, self.br_pytorch_net)
         self.network_trainer = NetworkTrainer(self.avg_pytorch_net, self.br_pytorch_net)
-        self.evaluator = Evaluator(self.env, self.feature_extractor, self.action_selector)
+        self.evaluator = Evaluator(
+            self.env, 
+            self.feature_extractor, 
+            self.action_selector,
+            bootstrap_episodes=self.bootstrap_episodes,
+            br_frequency=self.br_frequency,
+            as_frequency=self.as_frequency
+        )
         
         # Load existing models if available
         TrainingUtils.load_existing_models(self.avg_pytorch_net, self.br_pytorch_net)
@@ -210,12 +244,12 @@ class NFSPTrainer:
             self.current_episode = episode
             
             # Wrap each episode with watchdog to detect freezes/infinite loops
-            with TrainingWatchdog(seconds=60):
+            with TrainingWatchdog(seconds=30):
                 #
                 # EPISODE RESET LOGIC: Ensure every episode starts with a fresh, playable scenario.
                 # This clears the board from the previous episode's results and prevents infinite loops.
                 #
-                print(f"\n--- Episode {episode+1}/{episodes}: Resetting Scenario ---")
+                # print(f"\n--- Episode {episode+1}/{episodes}: Resetting Scenario ---")
                 if self.stack_depth_simulator:
                     # Tell the simulator to start a new session with new asymmetric stacks
                     new_stacks = self.stack_depth_simulator.reset_session(reason="new_episode")
@@ -260,15 +294,12 @@ class NFSPTrainer:
                     as_agent_id = "average_strategy_v1"
                     br_agent_id = "best_response_v1"
                     
-                    # AS is training (P0), BR is opponent (P1) - get BR's stats
-                    opponent_stats = self.stats_tracker.get_player_percentages(br_agent_id)
-                    
                     # Create player map: P0=AS (training), P1=BR (opponent)
                     player_map = {0: as_agent_id, 1: br_agent_id}
                     
                     # Train average strategy network (GTO approximation)
                     experiences, win_rate = self.data_collector.collect_average_strategy_data(
-                        hands_per_episode, self.action_selector, self.current_episode, opponent_stats, player_map
+                        hands_per_episode, self.action_selector, self.current_episode, player_map
                     )
                     
                     if len(experiences) > 32:  # Reduced threshold for faster startup
@@ -307,15 +338,12 @@ class NFSPTrainer:
                     as_agent_id = "average_strategy_v1"
                     br_agent_id = "best_response_v1"
                     
-                    # BR is training (P0), AS is opponent (P1) - get AS's stats
-                    opponent_stats = self.stats_tracker.get_player_percentages(as_agent_id)
-                    
                     # Create player map: P0=BR (training), P1=AS (opponent)
                     player_map = {0: br_agent_id, 1: as_agent_id}
                     
                     # Train best response network (exploiter)
                     experiences, win_rate = self.data_collector.collect_best_response_data(
-                        hands_per_episode, self.action_selector, self.current_episode, opponent_stats, player_map
+                        hands_per_episode, self.action_selector, self.current_episode, player_map
                     )
                     
                     if len(experiences) > 32:  # Reduced threshold for faster startup
@@ -352,7 +380,7 @@ class NFSPTrainer:
                     
                     # Process experiences for NFSP
                     self._process_br_experiences(experiences)
-                
+                                
                 # Always track episode number
                 self.episode_numbers.append(episode)
                 
@@ -465,7 +493,7 @@ class NFSPTrainer:
         else:
             cycle = (episode - 10) // 3 + 1
             cycle_pos = (episode - 10) % 3 + 1
-            phase = f"  PHASE 2: Alternating 1BR:2AS (Cycle {cycle})"
+            phase = f"  PHASE 2: Alternating 2BR:1AS (Cycle {cycle})"
             phase_progress = f"{cycle_pos}/3"
         
         training_type = "  BR Training" if train_best_response else "  AS Training"

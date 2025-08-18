@@ -15,15 +15,15 @@ class StrategicAnalyzer:
     Calculates high-level, range-dependent strategic features using a trained
     RangePredictorNN. This is the core "brain" for advanced concepts.
     """
-    def __init__(self, range_constructor_nn: RangeConstructorNN, equity_calculator: EquityCalculator):
+    def __init__(self, range_constructor, equity_calculator: EquityCalculator):
         """
         Initializes the analyzer with the necessary tools.
         
         Args:
-            range_constructor_nn: An instance of the TRAINED NN-based range constructor.
+            range_constructor: A RangeConstructor instance (either basic or NN-based with fallback).
             equity_calculator: An instance of the EquityCalculator.
         """
-        self.range_constructor = range_constructor_nn
+        self.range_constructor = range_constructor
         self.equity_calculator = equity_calculator
 
     def calculate_features(self, self_context: dict, opponent_context: dict) -> dict:
@@ -43,33 +43,38 @@ class StrategicAnalyzer:
         # Step 3: Predict the self's range as perceived by the opponent.
         self_perceived_range = self._predict_self_perceived_range(self_context)
 
-        # Step 4: Use these ranges to calculate advanced metrics.
+        # Step 4: Calculate the one essential equity feature (always needed)
         hand_vs_range = self._calculate_hand_vs_range(self_context, opponent_range)
-        
-        range_vs_range_equity = self._calculate_range_vs_range_equity(
-            self_perceived_range, opponent_range, self_context.get('board_strings', [])
-        )
-        
-        implied_odds = self._calculate_implied_odds(self_context, opponent_range, self_perceived_range)
-        
-        fold_equity = self._calculate_fold_equity(self_perceived_range, opponent_range, self_context)
+
+        # --- START FIX ---
+        # Only calculate the ultra-expensive features if the NN is trained and active.
+        # Otherwise, default them to 0.0 for the bootstrapping phase.
+        if hasattr(self.range_constructor, 'model') and self.range_constructor.model is not None:
+            range_vs_range_equity = self._calculate_range_vs_range_equity(
+                self_perceived_range, opponent_range, self_context.get('board_strings', [])
+            )
+            implied_odds = self._calculate_implied_odds(self_context, opponent_range, self_perceived_range)
+            fold_equity = self._calculate_fold_equity(self_perceived_range, opponent_range, self_context)
+            reverse_implied_odds = self._calculate_reverse_implied_odds(self_context, opponent_range)
+            playability = self._calculate_playability(self_context, self_perceived_range)
+            future_payoff = self._calculate_future_payoff(self_context, opponent_range)
+        else:
+            # Default values during heuristic bootstrapping
+            range_vs_range_equity = 0.5
+            implied_odds = 0.0
+            fold_equity = 0.0
+            reverse_implied_odds = 0.0
+            playability = 0.0
+            future_payoff = 0.0
+        # --- END FIX ---
         
         # Calculate equity delta (change from previous street)
-        equity_delta = self._calculate_equity_delta(self_context, hand_vs_range)
-
-        # *** ADD THE NEW RANGE-DRIVEN CALCULATIONS ***
-        reverse_implied_odds = self._calculate_reverse_implied_odds(self_context, opponent_range)
-        
-        playability = self._calculate_playability(self_context, self_perceived_range)
-        
-        # *** ADD THE FINAL MISSING FEATURE ***
-        future_payoff = self._calculate_future_payoff(self_context, opponent_range)
+        # equity_delta = self._calculate_equity_delta(self_context, hand_vs_range)
         
         return {
             "implied_odds": implied_odds,
             "hand_vs_range": hand_vs_range,           # Keep for backward compatibility
             "fold_equity": fold_equity,
-            "showdown_equity": hand_vs_range,         # Alias for hand_vs_range
             "reverse_implied_odds": reverse_implied_odds,
             "range_vs_range": range_vs_range_equity,      # Alias for compatibility
             "future_payoff": future_payoff,
@@ -77,30 +82,22 @@ class StrategicAnalyzer:
         }
 
     def _predict_opponent_range(self, opponent_context: dict) -> dict:
-        """
-        Predicts the opponent's range using their clean public features.
-        Uses the new public-only feature extraction approach.
-        """
+        """Predicts the opponent's range using the MODERNIZED constructor."""
+        # The context dictionary, created by FeatureExtractor, has all the needed info.
         return self.range_constructor.construct_range(
-            action_history=opponent_context['action_history'],
-            current_board=opponent_context['board_strings'],
-            current_pot=opponent_context['pot'],
-            opponent_stats=opponent_context['stats'],
-            opponent_features=opponent_context['public_features']  # Now uses clean public features
+            game_state=opponent_context.get('static_ctx').game_state,
+            action_sequencer=opponent_context.get('action_sequencer'),
+            opponent_stats=opponent_context.get('opponent_stats'),
+            public_features=opponent_context.get('public_features')
         )
     
     def _predict_self_perceived_range(self, self_context: dict) -> dict:
-        """
-        Predicts the self's range from the opponent's perspective.
-        Uses clean public features instead of sanitized features.
-        """
-        # Use the clean public features that exclude private information
+        """Predicts the self's range using the MODERNIZED constructor."""
         return self.range_constructor.construct_range(
-            action_history=self_context['action_history'],
-            current_board=self_context['board_strings'],
-            current_pot=self_context['pot'],
-            opponent_stats=self_context['stats'],
-            opponent_features=self_context['public_features']  # Now uses clean public features
+            game_state=self_context.get('static_ctx').game_state,
+            action_sequencer=self_context.get('action_sequencer'),
+            opponent_stats=self_context.get('self_stats'), # Note: we use self_stats here
+            public_features=self_context.get('public_features')
         )
     
     def _card_id_to_string(self, card_id: int) -> str:
@@ -175,20 +172,30 @@ class StrategicAnalyzer:
         
         if not player_range:
             return composition
-        
+                
+        # --- START FIX: Define a more realistic baseline range to compare against ---
+        # This represents a typical, average range of hands an opponent might have.
+        baseline_comparison_range = {
+            ('As', 'Ks'): 1.0, ('Qs', 'Js'): 1.0, ('Ts', '9s'): 1.0, ('Ad', 'Qd'): 1.0,
+            ('Ah', 'Kh'): 1.0, ('Qh', 'Jh'): 1.0, ('Th', '9h'): 1.0, ('Ac', 'Qc'): 1.0,
+            ('As', 'Ad'): 1.0, ('Ks', 'Kd'): 1.0, ('Qs', 'Qd'): 1.0, ('Js', 'Jd'): 1.0,
+            ('Ac', 'Kc'): 1.0, ('Qc', 'Jc'): 1.0, ('Tc', '9c'): 1.0, ('As', 'Qc'): 1.0,
+        }
+        # --- END FIX ---
+
         total_weight = 0.0
         
         for hand_tuple, weight in player_range.items():
             # Convert hand tuple to list for equity calculator
             hand_list = list(hand_tuple)
             
-            # Calculate this hand's equity vs a random opponent on this board
+            # Calculate this hand's equity vs a realistic baseline range
             try:
-                # Use a simple random range for comparison
-                random_range = {('random_card1', 'random_card2'): 1.0}  # Placeholder
+                # --- START FIX: Use the baseline range for comparison ---
                 equity = self.equity_calculator.calculate_equity(
-                    hand_list, board, random_range, num_simulations=50
+                    hand_list, board, baseline_comparison_range, num_simulations=50
                 )
+                # --- END FIX ---
             except:
                 # Fallback: estimate equity based on hand strength heuristics
                 equity = self._estimate_hand_equity(hand_list, board)

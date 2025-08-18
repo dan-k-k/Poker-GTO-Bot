@@ -630,11 +630,75 @@ class StatsTracker:
             for pot_ratio in pot_ratios:
                 stats['pot_ratios'].append(pot_ratio)
     
+    def get_baseline_stats(self) -> dict:
+        """
+        Returns a dictionary of baseline stats for a generic, competent opponent.
+        Used when no historical data is available for a player.
+        """
+        return {
+            # Meta statistics
+            'total_hands': 0,
+            'sample_size': 1,  # Indicate these are defaults
+            
+            # Pre-flop core statistics
+            'vpip': 0.22,  # Tight-aggressive baseline
+            'pfr': 0.18,   # Reasonable aggression
+            'three_bet': 0.08, 'fold_to_three_bet': 0.65, 'limp': 0.05,
+            'preflop_fold_rate': 0.75,
+            
+            # Per-street strategic actions - 3-bet
+            'three_bet_preflop': 0.08, 'three_bet_flop': 0.02,
+            'three_bet_turn': 0.01, 'three_bet_river': 0.01,
+            
+            # Per-street strategic actions - Donk bet
+            'donk_bet_flop': 0.05, 'donk_bet_turn': 0.03, 'donk_bet_river': 0.02,
+            
+            # Per-street strategic actions - Probe bet
+            'probe_bet_turn': 0.08, 'probe_bet_river': 0.06,
+            
+            # Per-street strategic actions - Check-raise
+            'checkraise_flop': 0.08, 'checkraise_turn': 0.06, 'checkraise_river': 0.05,
+            
+            # Float bet
+            'float_bet': 0.12,
+            
+            # Post-flop aggression by street
+            'cbet_flop': 0.65, 'cbet_turn': 0.50, 'cbet_river': 0.45,
+            'aggression_frequency': 0.35,
+            
+            # Post-flop defense by street
+            'fold_to_cbet_flop': 0.45, 'fold_to_cbet_turn': 0.50, 'fold_to_cbet_river': 0.55,
+            
+            # Street-specific fold rates
+            'flop_fold_rate': 0.40, 'turn_fold_rate': 0.35, 'river_fold_rate': 0.30,
+            'fold_frequency': 0.42,
+            
+            # Showdown tendencies
+            'wtsd': 0.28, 'showdown_win_rate': 0.52,
+            
+            # Bet sizing and all-in tendencies
+            'all_in_frequency': 0.03, 'avg_bet_size': 18.5, 'avg_pot_ratio': 0.65,
+            
+            # Advanced betting patterns
+            'double_barrel': 0.45, 'triple_barrel': 0.35, 'delayed_cbet': 0.25,
+            'steal_attempt': 0.35, 'fold_to_steal': 0.70, 'button_isolation': 0.60,
+            'fold_vs_flop_checkraise': 0.55, 'limp_reraise': 0.02, 'slowplay_frequency': 0.08,
+            'river_overbet_frequency': 0.12, 'value_bet_sizing': 22.0, 'bluff_bet_sizing': 18.0,
+            'sizing_tell_strength': 4.0,
+            'turn_probe_after_check': 0.20, 'river_probe_after_check': 0.15,
+            'barrel_give_up_turn': 0.40, 'barrel_give_up_river': 0.50,
+        }
+
     def get_player_percentages(self, player_id: str) -> Dict[str, float]:
         """
         Get calculated percentage stats for a player using sliding window data.
+        Falls back to baseline stats if the player doesn't exist.
         This is the main method used by the RangeConstructor.
         """
+        # If the player has no stats, return the baseline model
+        if player_id not in self.stats:
+            return self.get_baseline_stats()
+            
         raw = self.stats[player_id]
         
         def safe_percentage_from_history(history_deque):
@@ -649,7 +713,7 @@ class StatsTracker:
                 return 0.0
             return sum(values_deque) / len(values_deque)
         
-        return {
+        percentages = {
             # Meta - use total hands and recent sample size
             'total_hands': raw['total_hands'],
             'sample_size': len(raw['vpip_history']) if raw['vpip_history'] else 0,

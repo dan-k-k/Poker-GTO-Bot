@@ -77,7 +77,6 @@ class ActionSelector:
     
     def _determine_bet_size(self, state, sizing_output, player_id, config) -> int:
         """
-        THIS IS WHAT THE AGENT OUTPUTS.
         Generic bet size determination using configuration parameters.
         This version includes both the de-normalization bug fix AND the
         strategic quadratic mapping for finer control over smaller bets.

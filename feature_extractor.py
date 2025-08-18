@@ -47,7 +47,7 @@ class FeatureExtractor:
     - AdditionalHistoryFeatures         → StreetHistoryAnalyzer
     """
     
-    def __init__(self, num_players: int = 2):
+    def __init__(self, num_players: int = 2, range_constructor=None, equity_calculator=None):
         # Core tracking components
         self.history_tracker = StreetHistoryTracker()
         self.action_sequencer = ActionSequencer()
@@ -58,10 +58,14 @@ class FeatureExtractor:
         self.current_street_analyzer = CurrentStreetAnalyzer()
         self.history_analyzer = StreetHistoryAnalyzer()
         
-        # Strategic analysis components
-        self.range_constructor = RangeConstructorNN()
-        self.equity_calculator = EquityCalculator()
+        # --- START REFACTOR ---
+        # It no longer creates its own instances. It receives the shared ones.
+        # Import both fallback options
+        from trainingL1.range_constructors import RangeConstructor
+        self.range_constructor = range_constructor or RangeConstructor()
+        self.equity_calculator = equity_calculator or EquityCalculator()
         self.strategic_analyzer = StrategicAnalyzer(self.range_constructor, self.equity_calculator)
+        # --- END REFACTOR ---
         
     def _card_id_to_string(self, card_id: int) -> str:
         """Convert card ID (0-51) to string representation like '2s'."""
@@ -77,6 +81,7 @@ class FeatureExtractor:
         return ranks[rank_id] + suits[suit_id]
     
     def _create_initial_schema(self, game_state: GameState, seat_id: int, 
+                               self_stats: dict = None,  # ADD this
                                opponent_stats: dict = None) -> PokerFeatureSchema:
         """
         The SINGLE core helper to build a complete schema of all non-leaky
@@ -129,7 +134,7 @@ class FeatureExtractor:
         
         # Current additional features (includes both public and private - metadata will filter)
         current_additional_data = self.current_street_analyzer.calculate_current_street_additional(
-            static_ctx, dynamic_ctx, self.action_sequencer, opponent_stats, None
+            static_ctx, dynamic_ctx, self.action_sequencer
         )
         schema.current_additional = self._dict_to_current_additional_features(current_additional_data)
         
@@ -166,36 +171,28 @@ class FeatureExtractor:
             schema.my_hand = self.hand_analyzer.extract_features(static_ctx.hole_cards, static_ctx.community)
         
         # Opponent model features are public
+        # --- START CHANGES ---
+        # Populate self and opponent models
+        if self_stats:
+            schema.self_model = self._dict_to_self_model_features(self_stats)  # Can reuse the helper
         if opponent_stats:
             schema.opponent_model = self._dict_to_opponent_model_features(opponent_stats)
+        # --- END CHANGES ---
 
         return schema
 
     def extract_public_features(self, game_state: GameState, seat_id: int, 
-                                                    opponent_stats: dict = None) -> List[float]:
+                                self_stats: dict = None, # ADD THIS
+                                opponent_stats: dict = None) -> List[float]:
         """
-        Extracts a SHORTER feature vector containing ONLY public information
-        from a specific player's perspective. This is used exclusively for the RangeConstructorNN.
-        
-        This method excludes all private/leaky information:
-        - my_hand features (requires knowing hole cards)
-        - current_strategic features (requires equity calculations with known hand)
-        - strategic_history features (depends on private hand information)
-        - hand_strength in current_additional (depends on known hand)
-        
-        Args:
-            game_state: Current game state
-            seat_id: Player seat ID to extract features from their perspective
-            opponent_stats: Optional opponent statistics
-            
-        Returns:
-            List of floats representing only public information features
+        Extracts a SHORTER feature vector containing ONLY public information...
         """
-        # Build the complete schema first
-        complete_schema = self._create_initial_schema(game_state, seat_id, opponent_stats)
+        # Build the complete schema first, passing both sets of stats
+        complete_schema = self._create_initial_schema(game_state, seat_id, self_stats, opponent_stats)
         
         # Filter to public-only using smart metadata-driven function
         return self._schema_to_public_vector(complete_schema)
+
     
     def _schema_to_public_vector(self, schema: PokerFeatureSchema) -> List[float]:
         """
@@ -300,7 +297,7 @@ class FeatureExtractor:
         return opponent_vector
     
     def _create_strategic_context(self, game_state: GameState, seat_id: int, public_features: List[float],
-                                action_history: Dict = None, opponent_stats: Dict = None) -> dict:
+                                  self_stats: Dict = None, opponent_stats: Dict = None) -> dict:
         """Create context dictionary for strategic analysis using public features."""
         # Convert card IDs to strings
         hand_strings = []
@@ -312,26 +309,28 @@ class FeatureExtractor:
             board_strings = [self._card_id_to_string(c) for c in game_state.community]
         
         return {
-            'public_features': public_features,  # Clean public-only features for range prediction
+            'public_features': public_features,
             'static_ctx': StaticContext(game_state, seat_id),
-            'stats': opponent_stats or {},
-            'action_history': action_history or [],
+            'self_stats': self_stats or {}, # ADD this
+            'opponent_stats': opponent_stats or {}, # RENAME this key for clarity
             'hand_strings': hand_strings,
             'board_strings': board_strings,
             'pot': getattr(game_state, 'pot', 100),
-            'history_tracker': self.history_tracker  # Add history tracker for delta calculations
+            'history_tracker': self.history_tracker,
+            'action_sequencer': self.action_sequencer # Add this line
         }
 
     def extract_features(self, game_state: GameState, seat_id: int, role: str,
-                        opponent_stats: Dict = None, full_hand_action_history: Dict = None) -> Tuple[np.ndarray, PokerFeatureSchema]:
+                        self_stats: Dict = None,
+                        opponent_stats: Dict = None) -> Tuple[np.ndarray, PokerFeatureSchema]:
         """
         Main orchestration method. Follows a clean, direct 3-phase process.
         
         Args:
             game_state: Current game state
             seat_id: Player seat ID (self)
+            self_stats: Optional dict with self's poker statistics
             opponent_stats: Optional dict with opponent's poker statistics
-            full_hand_action_history: Optional dict of full hand action history
             
         Returns:
             Tuple of (feature vector, structured schema) for ML training and debugging
@@ -343,27 +342,27 @@ class FeatureExtractor:
 
         # === PHASE 1: Build the Complete Non-Leaky Schema ===
         # This schema contains all non-leaky features (both public and private)
-        final_schema = self._create_initial_schema(game_state, self_seat_id, opponent_stats)
+        # 2. Update the schema creation call
+        final_schema = self._create_initial_schema(game_state, self_seat_id, self_stats, opponent_stats)
         
         # === PHASE 2: Strategic Analysis (Leaky Features) ===
-        # Only run if the RangePredictorNN is trained and loaded
-        if hasattr(self.range_constructor, 'model') and self.range_constructor.model is not None:
-            # 2.1 Get public-only features efficiently from the already-built schema
-            self_public_features = self._schema_to_public_vector(final_schema)
-            
-            # 2.2 For opponent, reuse opponent features already computed in Phase 1
-            # Extract opponent public features from the existing schema instead of rebuilding
-            opp_public_features = self._extract_opponent_public_features_from_schema(final_schema)
-            
-            # 2.3 Create contexts with public features for clean range prediction
-            self_context = self._create_strategic_context(game_state, self_seat_id, self_public_features, full_hand_action_history, opponent_stats)
-            opponent_context = self._create_strategic_context(game_state, opponent_seat_id, opp_public_features, full_hand_action_history, opponent_stats)
-            
-            # 2.4 Calculate all strategic (leaky) features
-            strategic_features = self.strategic_analyzer.calculate_features(self_context, opponent_context)
-            
-            # 2.5 Populate the schema with strategic results
-            final_schema.current_strategic = self._dict_to_current_strategic_features(strategic_features)
+        # Always run strategic analysis - it will use NN if available, otherwise heuristic fallback
+        # 2.1 Get public-only features efficiently from the already-built schema
+        self_public_features = self._schema_to_public_vector(final_schema)
+        
+        # 2.2 For opponent, reuse opponent features already computed in Phase 1
+        # Extract opponent public features from the existing schema instead of rebuilding
+        opp_public_features = self._extract_opponent_public_features_from_schema(final_schema)
+        
+        # 2.3 Create contexts with public features for clean range prediction
+        self_context = self._create_strategic_context(game_state, self_seat_id, self_public_features, self_stats, opponent_stats)
+        opponent_context = self._create_strategic_context(game_state, opponent_seat_id, opp_public_features, opponent_stats, self_stats)
+        
+        # 2.4 Calculate all strategic (leaky) features
+        strategic_features = self.strategic_analyzer.calculate_features(self_context, opponent_context)
+        
+        # 2.5 Populate the schema with strategic results
+        final_schema.current_strategic = self._dict_to_current_strategic_features(strategic_features)
         
         # === PHASE 3: Add Strategic History ===
         # Add strategic history features (leaky, depends on strategic analysis from previous streets)
@@ -374,7 +373,9 @@ class FeatureExtractor:
             self.history_analyzer.calculate_strategic_history(static_ctx, dynamic_ctx)
         )
         
-        return final_schema.to_vector(), final_schema
+        # And update the call to to_vector() in feature_extractor.py
+        # At the very end of the function, before the return
+        return final_schema.to_vector(role=role), final_schema
     
     # === PUBLIC INTERFACE FOR HISTORY MANAGEMENT ===
     
@@ -437,6 +438,10 @@ class FeatureExtractor:
     def _dict_to_additional_history_features(self, data: dict):
         from poker_feature_schema import AdditionalHistoryFeatures
         return AdditionalHistoryFeatures(**data)
+    
+    def _dict_to_self_model_features(self, data: dict):
+        from poker_feature_schema import SelfModelFeatures
+        return SelfModelFeatures(**data)
     
     def _dict_to_opponent_model_features(self, data: dict):
         from poker_feature_schema import OpponentModelFeatures
@@ -656,7 +661,7 @@ class FeatureExtractor:
         """Validate that feature extraction produces expected vector size."""
         try:
             features, _ = self.extract_features(game_state, seat_id)
-            expected_size = 736
+            expected_size = 790
             actual_size = len(features)
             
             if actual_size != expected_size:

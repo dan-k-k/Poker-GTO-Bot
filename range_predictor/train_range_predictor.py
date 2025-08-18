@@ -18,8 +18,8 @@ from typing import Dict, List, Optional, Tuple
 import argparse
 from datetime import datetime
 
-from range_network import RangeNetwork, create_range_network
-from range_dataset import RangeDataset, create_data_loaders
+from .range_network import RangeNetwork, create_range_network
+from .range_dataset import RangeDataset, create_data_loaders
 
 class RangePredictor:
     """Training and evaluation manager for range prediction."""

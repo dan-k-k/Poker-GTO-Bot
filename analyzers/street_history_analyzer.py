@@ -376,7 +376,7 @@ class StreetHistoryAnalyzer:
         self_static_ctx = StaticContext(game_state=static_ctx.game_state, seat_id=self_seat_id)
         
         additional_features = self.current_street_analyzer.calculate_current_street_additional(
-            self_static_ctx, dynamic_ctx, None, None, None
+            self_static_ctx, dynamic_ctx
         )
         
         # 4. Extract and return the accurately calculated features for the self

@@ -567,6 +567,103 @@ class StrategicHistoryFeatures:
 # =============================================================================
 
 @dataclass
+class SelfModelFeatures:
+    """Self modeling features based on per-street strategic statistics [56 features]."""
+    # Meta statistics
+    total_hands: float = 0.0                           # Total hands observed
+    sample_size: float = 0.0                           # Recent sample size (sliding window)
+    
+    # Pre-flop core statistics
+    vpip: float = 0.0                                   # Voluntarily Put In Pot %
+    pfr: float = 0.0                                    # Pre-Flop Raise %
+    three_bet: float = 0.0                              # Overall 3-bet % (legacy)
+    fold_to_three_bet: float = 0.0                      # Fold to 3-bet %
+    limp: float = 0.0                                   # Limp %
+    preflop_fold_rate: float = 0.0                      # Preflop fold rate
+    
+    # Per-street strategic actions - 3-bet
+    three_bet_preflop: float = 0.0                      # 3-bet preflop %
+    three_bet_flop: float = 0.0                         # 3-bet flop % (much rarer)
+    three_bet_turn: float = 0.0                         # 3-bet turn % (very rare)
+    three_bet_river: float = 0.0                        # 3-bet river % (extremely rare)
+    
+    # Per-street strategic actions - Donk bet
+    donk_bet_flop: float = 0.0                          # Donk bet flop % (OOP, not prev aggressor)
+    donk_bet_turn: float = 0.0                          # Donk bet turn %
+    donk_bet_river: float = 0.0                         # Donk bet river %
+    
+    # Per-street strategic actions - Probe bet
+    probe_bet_turn: float = 0.0                         # Probe bet turn % (OOP after PF aggressor checked)
+    probe_bet_river: float = 0.0                        # Probe bet river %
+    
+    # Per-street strategic actions - Check-raise
+    checkraise_flop: float = 0.0                        # Check-raise flop %
+    checkraise_turn: float = 0.0                        # Check-raise turn %
+    checkraise_river: float = 0.0                       # Check-raise river %
+    
+    # Float bet (call flop IP, bet when checked to)
+    float_bet: float = 0.0                              # Float bet %
+    
+    # Post-flop aggression by street
+    cbet_flop: float = 0.0                              # Continuation bet flop %
+    cbet_turn: float = 0.0                              # Continuation bet turn %
+    cbet_river: float = 0.0                             # Continuation bet river %
+    aggression_frequency: float = 0.0                   # Overall post-flop aggression %
+    
+    # Post-flop defense by street
+    fold_to_cbet_flop: float = 0.0                      # Fold to c-bet flop %
+    fold_to_cbet_turn: float = 0.0                      # Fold to c-bet turn %
+    fold_to_cbet_river: float = 0.0                     # Fold to c-bet river %
+    
+    # Street-specific fold rates
+    flop_fold_rate: float = 0.0                         # Fold rate on flop
+    turn_fold_rate: float = 0.0                         # Fold rate on turn
+    river_fold_rate: float = 0.0                        # Fold rate on river
+    fold_frequency: float = 0.0                         # Overall fold frequency
+    
+    # Showdown tendencies
+    wtsd: float = 0.0                                   # Went To Showdown %
+    showdown_win_rate: float = 0.0                      # Won $ at Showdown %
+    
+    # Bet sizing and all-in tendencies
+    all_in_frequency: float = 0.0                       # All-in frequency %
+    avg_bet_size: float = 0.0                           # Average bet size (BB)
+    avg_pot_ratio: float = 0.0                          # Average bet-to-pot ratio
+    
+    # === ADVANCED BETTING PATTERNS ===
+    
+    # Multi-Street Aggression Patterns
+    double_barrel: float = 0.0                          # % bet turn after c-betting flop
+    triple_barrel: float = 0.0                          # % bet river after betting flop+turn
+    delayed_cbet: float = 0.0                           # % bet turn after checking flop (as PF aggressor)
+    
+    # Positional Betting Tendencies  
+    steal_attempt: float = 0.0                          # % raise from late position when folded to
+    fold_to_steal: float = 0.0                          # % fold in blinds vs late position raise
+    button_isolation: float = 0.0                       # % isolate limpers from button
+    
+    # Advanced Defensive and Deceptive Lines
+    fold_vs_flop_checkraise: float = 0.0                # % fold when c-bet gets check-raised
+    limp_reraise: float = 0.0                           # % 3-bet after limping (trapping)
+    slowplay_frequency: float = 0.0                     # % check strong hands for deception
+    
+    # Bet Sizing Tells (Layer 2 exploitative gold)
+    river_overbet_frequency: float = 0.0                # % overbet (>100% pot) on river
+    value_bet_sizing: float = 0.0                       # Avg bet size with value hands (% pot)
+    bluff_bet_sizing: float = 0.0                       # Avg bet size with bluff hands (% pot)
+    sizing_tell_strength: float = 0.0                   # |value_size - bluff_size| (exploitability)
+    
+    # Multi-Street Continuation Patterns
+    turn_probe_after_check: float = 0.0                 # % bet turn after checking flop OOP
+    river_probe_after_check: float = 0.0                # % bet river after checking turn OOP
+    barrel_give_up_turn: float = 0.0                    # % give up (check) turn after c-betting flop
+    barrel_give_up_river: float = 0.0                   # % give up river after betting flop+turn
+    
+    def to_list(self) -> List[float]:
+        return [getattr(self, f.name) for f in fields(self)]
+
+
+@dataclass
 class OpponentModelFeatures:
     """Opponent modeling features based on per-street strategic statistics [56 features]."""
     # Meta statistics
@@ -677,8 +774,9 @@ class PokerFeatureSchema:
     Core Features: 188 + 120 = 308 features (MyHandFeatures with full texture analysis)
     Current Street (self + Opponent): (17 + 13 + 4) * 2 + 4 + 10 + 9 = 91 features (includes strategic features)
     History (self + Opponent): (76 + 40) * 2 + 8 + 32 = 272 features (includes strategic history)
-    Opponent Model: 54 features (per-street strategic statistics + advanced patterns)
-    Total: 308 + 91 + 272 + 54 = 725 features
+    Player Model: 56 + 56 = 112 features (self model + opponent model/zeros)
+    Total: 308 + 91 + 272 + 112 = 783 features (fixed size for both AS and BR)
+    USER NOTE: THERE ARE TRULY 790 FEATURES NOW, SO THE COUNT ABOVE IS OUTDATED.
     """
     # === CORE POKER CONCEPTS ===
     my_hand: MyHandFeatures = field(default_factory=MyHandFeatures)                    # 188 features
@@ -713,12 +811,19 @@ class PokerFeatureSchema:
     additional_history: AdditionalHistoryFeatures = field(default_factory=AdditionalHistoryFeatures)       # 16 features (self only)
     strategic_history: StrategicHistoryFeatures = field(default_factory=StrategicHistoryFeatures)          # 32 features (self only)
     
-    # === OPPONENT MODEL FEATURES ===
-    # Opponent statistical profile based on observed behavior
+    # === PLAYER MODEL FEATURES ===
+    # Statistical profile based on observed behavior
+    self_model: SelfModelFeatures = field(default_factory=SelfModelFeatures)                              # 56 features
     opponent_model: OpponentModelFeatures = field(default_factory=OpponentModelFeatures)                   # 56 features
     
-    def to_vector(self) -> List[float]:
-        """Flatten the entire nested structure into a single feature vector for ML model."""
+    def to_vector(self, role: str = None) -> List[float]:
+        """
+        Converts the entire schema to a flat list for the neural network.
+        Selectively excludes features based on the agent's role.
+
+        Args:
+            role: The role of the agent ("AS" or "BR"). If None, includes all features.
+        """
         vector = []
         
         # Core poker concepts
@@ -743,7 +848,18 @@ class PokerFeatureSchema:
         vector.extend(self.opponent_stack_history.to_list())      # 32 features
         vector.extend(self.additional_history.to_list())          # 8 features
         vector.extend(self.strategic_history.to_list())           # 32 features
-        vector.extend(self.opponent_model.to_list())              # 56 features
+        
+        # --- FIXED-SIZE VECTOR LOGIC ---
+        # Always include self model (helps AS with frequency balance)
+        vector.extend(self.self_model.to_list())                  # 56 features
+        
+        # Opponent model: BR gets real stats, AS gets zeros (fixed vector size)
+        if role == "BR":
+            vector.extend(self.opponent_model.to_list())          # 56 features
+        else:  # role == "AS" 
+            num_opponent_features = len(self.opponent_model.to_list())
+            vector.extend([0.0] * num_opponent_features)          # 56 zero features
+        # --- END FIXED-SIZE VECTOR LOGIC ---
         
         return vector
     
@@ -786,11 +902,15 @@ class PokerFeatureSchema:
         summary += f"  {'TOTAL':25} {total_features:3d} features\n"
         return summary
     
-    def validate_feature_count(self, expected: int = 725) -> bool:
+    def validate_feature_count(self, expected: int = None, role: str = None) -> bool:
         """Validate that we have the expected number of features."""
-        actual = len(self.to_vector())
+        # Set default expected count (same for both roles now)
+        if expected is None:
+            expected = 790
+            
+        actual = len(self.to_vector(role=role))
         if actual != expected:
-            print(f"WARNING: Expected {expected} features, got {actual}")
+            print(f"WARNING: Expected {expected} features for role {role}, got {actual}")
             print(f"Feature breakdown:")
             print(self.get_concept_summary())
             return False

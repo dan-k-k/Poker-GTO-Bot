@@ -10,13 +10,30 @@ from collections import deque
 class Evaluator:
     """
     1. Handles exploitability measurement and GTO evaluation.
-    2. DECIDES whether to train AS (avg strat.) or BR (best response)
+    2. DECIDES whether to train AS (avg strat.) or BR (best response) based on a configurable schedule.
     """
     
-    def __init__(self, env, feature_extractor, action_selector):
+    def __init__(self, env, feature_extractor, action_selector,
+                 bootstrap_episodes: int = 10,
+                 br_frequency: int = 1,
+                 as_frequency: int = 2):
+        """
+        Initializes the Evaluator with a configurable training schedule.
+
+        Args:
+            bootstrap_episodes: The number of initial episodes to train only the Best Response agent.
+            br_frequency: The number of Best Response training episodes per cycle.
+            as_frequency: The number of Average Strategy training episodes per cycle.
+        """
         self.env = env
         self.feature_extractor = feature_extractor
         self.action_selector = action_selector
+        
+        # Store schedule parameters
+        self.bootstrap_episodes = bootstrap_episodes
+        self.br_frequency = br_frequency
+        self.as_frequency = as_frequency
+        self.cycle_length = br_frequency + as_frequency
     
     def measure_gto_exploitability(self) -> float:
         """Measure how exploitable the average strategy is using multiple opponent strategies."""
@@ -45,10 +62,10 @@ class Evaluator:
                     current_player = state['to_move']
                     
                     if current_player == 0:  # Average strategy (being tested)
-                        features, _ = self.feature_extractor.extract_features(self.env.state, 0)
+                        features, _ = self.feature_extractor.extract_features(self.env.state, 0, role="AS")
                         action, amount = self.action_selector._get_average_strategy_action(features, state)
                     else:  # Opponent strategy
-                        features, _ = self.feature_extractor.extract_features(self.env.state, 1)
+                        features, _ = self.feature_extractor.extract_features(self.env.state, 1, role="BR")
                         
                         if strategy_idx == 0:
                             # Best response network
@@ -74,27 +91,28 @@ class Evaluator:
         return total_exploitability / num_strategies  # Average exploitability across strategies
     
     def should_train_best_response(self, episode: int, return_reason: bool = False) -> Tuple[bool, Optional[str]]:
-        """Training schedule: 10 BR bootstrap, then 1 BR : 2 AS alternating."""
+        """Training schedule logic now uses the configured parameters."""
         
-        # Phase 1: Bootstrap (Episodes 0-9)
-        # Train BR first to populate reservoir buffer for AS
-        if episode < 10:
+        # Phase 1: Bootstrap
+        if episode < self.bootstrap_episodes:
             should_train_br = True
-            reason = f"Phase 1: Bootstrap BR training (episode {episode})"
+            reason = f"Phase 1: Bootstrap BR training ({episode + 1}/{self.bootstrap_episodes})"
         
-        # Phase 2: Alternating 1 BR : 2 AS (Episodes 10+)
-        # Cycle every 3 episodes: 1 BR, then 2 AS
+        # Phase 2: Alternating Cycle
         else:
-            cycle_position = (episode - 10) % 3
-            should_train_br = cycle_position == 0  # First episode of each 3-episode cycle = BR
+            # Determine position in the current cycle
+            cycle_position = (episode - self.bootstrap_episodes) % self.cycle_length
             
+            # The first 'br_frequency' episodes of the cycle are for BR training
+            should_train_br = cycle_position < self.br_frequency
+            
+            cycle_number = (episode - self.bootstrap_episodes) // self.cycle_length + 1
             if should_train_br:
-                cycle_number = (episode - 10) // 3 + 1
-                reason = f"Phase 2: BR training (Cycle {cycle_number}, episode {episode})"
+                br_episode_num = cycle_position + 1
+                reason = f"Phase 2: BR training {br_episode_num}/{self.br_frequency} (Cycle {cycle_number})"
             else:
-                cycle_number = (episode - 10) // 3 + 1
-                as_episode = cycle_position  # 1 or 2
-                reason = f"Phase 2: AS training {as_episode}/2 (Cycle {cycle_number}, episode {episode})"
+                as_episode_num = cycle_position - self.br_frequency + 1
+                reason = f"Phase 2: AS training {as_episode_num}/{self.as_frequency} (Cycle {cycle_number})"
         
         if return_reason:
             return should_train_br, reason

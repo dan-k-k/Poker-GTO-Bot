@@ -180,7 +180,7 @@ class CurrentStreetAnalyzer:
             aggro_commit_ratio = 0.0
         
         # Detect strategic patterns
-        did_check_raise = self._detect_check_raise(player_actions_this_street)
+        did_check_raise = self._detect_check_raise(seat_id, action_sequence)
         did_donk_bet = self._detect_donk_bet(seat_id, action_sequence, static_ctx, dynamic_ctx)
         did_3bet = self._detect_3bet(seat_id, action_sequence)
         did_float_bet = self._detect_float_bet(seat_id, action_sequencer, static_ctx, dynamic_ctx)
@@ -373,7 +373,7 @@ class CurrentStreetAnalyzer:
         }
     
     def calculate_current_street_additional(self, static_ctx: StaticContext, dynamic_ctx: DynamicContext, 
-                                           action_sequencer=None, opponent_stats: dict = None, opponent_action_history: list = None) -> dict:
+                                           action_sequencer=None) -> dict:
         """
         Calculate current additional self-only features.
         
@@ -620,25 +620,34 @@ class CurrentStreetAnalyzer:
         
         return pot_size_delta
     
-    def _detect_check_raise(self, player_actions: list) -> float:
+    def _detect_check_raise(self, seat_id: int, action_sequence: list) -> float:
         """
-        Detect if player check-raised (checked then raised on same street).
-        
+        Correctly detects if a player check-raised on the same street.
+
         Args:
-            player_actions: List of (action_type, amount) tuples for this player
+            seat_id: The ID of the player we are checking for.
+            action_sequence: The full list of (seat_id, action, amount) tuples for this street.
             
         Returns:
-            1.0 if check-raise detected, 0.0 otherwise
+            1.0 if check-raise detected, 0.0 otherwise.
         """
-        if len(player_actions) < 2:
-            return 0.0
-        
-        # Look for check followed by raise pattern
-        for i in range(len(player_actions) - 1):
-            if (player_actions[i][0] == "check" and 
-                player_actions[i + 1][0] in ["bet", "raise"]):
-                return 1.0
-        
+        has_checked = False
+        opponent_has_bet = False
+
+        for action_seat_id, action_type, amount in action_sequence:
+            if action_seat_id == seat_id:
+                # Phase 1: Player checks.
+                if action_type == 'check':
+                    has_checked = True
+                
+                # Phase 3: Player raises after opponent's bet.
+                if action_type in ['bet', 'raise'] and has_checked and opponent_has_bet:
+                    return 1.0
+            
+            # Phase 2: Opponent bets after our player has checked.
+            elif action_seat_id != seat_id and action_type in ['bet', 'raise'] and has_checked:
+                opponent_has_bet = True
+                
         return 0.0
     
     def _detect_donk_bet(self, seat_id: int, action_sequence: list, 
@@ -811,10 +820,8 @@ class CurrentStreetAnalyzer:
         """
         Unified C-bet detection: Did this player continue aggression from the previous street?
         
-        This works for any post-flop street:
-        - Flop: continues from preflop aggressor
-        - Turn: continues from flop aggressor  
-        - River: continues from turn aggressor
+        This works for any post-flop street by checking who the aggressor was
+        on the single, immediately preceding street.
         
         Returns 1.0 if player was previous street aggressor AND made first bet/raise this street.
         """
@@ -824,12 +831,11 @@ class CurrentStreetAnalyzer:
         if stage == 0:
             return 0.0
         
-        # --- START: CORRECTED LOGIC ---
         # 1. Determine the name of the immediately preceding street.
         street_map = {1: 'preflop', 2: 'flop', 3: 'turn'}
         previous_street_name = street_map.get(stage)
         if not previous_street_name:
-            return 0.0 # Should not happen post-flop
+            return 0.0
 
         # 2. Get the historical data for ONLY that previous street.
         hand_key = f"hand_{dynamic_ctx.history_tracker.get_hand_number()}"
@@ -838,25 +844,27 @@ class CurrentStreetAnalyzer:
         # 3. Find who the aggressor was on that specific street, if anyone.
         aggressor_on_prev_street = None
         if prev_street_snapshot:
-            for p_id in range(static_ctx.num_players):
-                if prev_street_snapshot.get(f"seat_{p_id}_is_last_bettor", 0.0) == 1.0:
-                    aggressor_on_prev_street = p_id
-                    break # Found the aggressor
+            # Check the 'raw_action_log' for the last aggressive action on that street
+            prev_street_log = prev_street_snapshot.get('raw_action_log', [])
+            for action_seat_id, action_type, _ in reversed(prev_street_log):
+                if action_type in ["bet", "raise"]:
+                    aggressor_on_prev_street = action_seat_id
+                    break
 
         # 4. Check if the current player was that aggressor.
         if aggressor_on_prev_street != seat_id:
             return 0.0
-        # --- END: CORRECTED LOGIC ---
             
-        # Find the first bet/raise on the current street
-        first_aggressive_action = None
-        for action_seat_id, action_type, amount in action_sequence:
+        # 5. Find the first bet/raise on the current street
+        first_aggressive_action_this_street = None
+        for action_seat_id, action_type, _ in action_sequence:
             if action_type in ["bet", "raise"]:
-                first_aggressive_action = (action_seat_id, action_type, amount)
+                first_aggressive_action_this_street = action_seat_id
                 break
         
-        # If there was a bet/raise and this player made it, it's a C-bet
-        if first_aggressive_action and first_aggressive_action[0] == seat_id:
+        # 6. If this player was the aggressor last street AND made the first aggressive
+        #    action this street, it's a C-bet.
+        if first_aggressive_action_this_street == seat_id:
             return 1.0
             
         return 0.0

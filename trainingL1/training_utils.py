@@ -654,7 +654,7 @@ class TrainingWatchdog:
     A watchdog timer to detect if training gets stuck on a single episode.
     Uses signal alarms to interrupt long-running processes and provide a traceback.
     """
-    def __init__(self, seconds=60, error_message='Training episode timed out.'):
+    def __init__(self, seconds=30, error_message='Training episode timed out.'):
         self.timeout_seconds = seconds
         self.error_message = error_message
 

@@ -497,12 +497,16 @@ class TexasHoldemEnv:
             return self.state.surviving_players[-1]
         
         current_idx = self.state.surviving_players.index(current_player)
-        for i in range(1, len(self.state.surviving_players)):
-            next_idx = (current_idx - i) % len(self.state.surviving_players)
+        num_survivors = len(self.state.surviving_players)
+
+        # Search all other players in a circle, in reverse
+        for i in range(1, num_survivors + 1):
+            # We add num_survivors before the modulo to handle negative results gracefully
+            next_idx = (current_idx - i + num_survivors) % num_survivors
             next_player = self.state.surviving_players[next_idx]
             if self.state.active[next_player] and not self.state.all_in[next_player]:
                 return next_player
-        return current_player  # Fallback if no one can act
+        return current_player  # Fallback if only the current player can act
     
     def _finish_hand_all_in(self):
         """Complete hand when all players are all-in or folded."""

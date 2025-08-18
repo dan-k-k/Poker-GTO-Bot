@@ -171,9 +171,11 @@ class GameState:
             current_bets=self.current_bets.copy(),
             pot=self.pot,
             starting_pot_this_round=self.starting_pot_this_round,
+            starting_stacks_this_hand=self.starting_stacks_this_hand.copy(), #
             active=self.active.copy(),
             all_in=self.all_in.copy(),
             acted=self.acted.copy(),
+            surviving_players=self.surviving_players.copy(), #
             stage=self.stage,
             dealer_pos=self.dealer_pos,
             sb_pos=self.sb_pos,

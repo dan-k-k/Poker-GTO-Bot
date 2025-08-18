@@ -6,26 +6,16 @@ import os
 import itertools
 from typing import List, Tuple, Dict
 
-try:
-    from ..range_predictor.range_network import RangeNetwork
-except ImportError:
-    import sys
-    sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-    from range_predictor.range_network import RangeNetwork
+from range_predictor.range_network import RangeNetwork
 
 
 class RangeConstructor:
     """
     Fast dynamic range constructor using opponent's live VPIP/PFR stats.
-    Much more accurate than static ranges for exploitative play.
+    MODERNIZED to work with ActionSequencer.
     """
-    def __init__(self, action_selector=None, feature_extractor=None):
-        # No longer need these for static version - included for compatibility
-        self.action_selector = action_selector
-        self.feature_extractor = feature_extractor
-        
+    def __init__(self):  # Simplified __init__
         # Pre-ranked list of all 169 starting hands (best to worst)
-        # This is the core of the fast stats-based approach
         self.HAND_RANKINGS = self._create_hand_rankings()
         
         # Cache for hand string to card tuple conversion
@@ -33,6 +23,28 @@ class RangeConstructor:
         
         # Initialize static ranges for fallback
         self._init_static_ranges()
+    
+    def _adapt_sequencer_to_history(self, game_state, action_sequencer) -> List[Dict]:
+        """
+        Adapter function to convert modern ActionSequencer output into the
+        legacy List[Dict] format required by the other heuristic methods.
+        """
+        legacy_history = []
+        action_log = action_sequencer.get_live_action_sequence()
+        
+        for seat_id, action_type, amount in action_log:
+            action_code = 1  # Default to call
+            if action_type == 'fold':
+                action_code = 0
+            elif action_type in ['bet', 'raise']:
+                action_code = 2
+            
+            legacy_history.append({
+                'action': action_code,
+                'stage': game_state.stage,
+                'seat_id': seat_id
+            })
+        return legacy_history
     
     def _create_hand_rankings(self) -> List[str]:
         """Create pre-ranked list of all 169 starting hands (best to worst)."""
@@ -440,76 +452,56 @@ class RangeConstructor:
             ('9s', '9d'): 0.8, ('8s', '8d'): 0.75, ('7s', '7d'): 0.7
         }
     
-    def construct_range(self, action_history: List[Dict], current_board: List[str], 
-                       current_pot: int, opponent_stats: Dict = None) -> Dict[Tuple[str, str], float]:
+    def construct_range(self, game_state, action_sequencer, opponent_stats: Dict, public_features: List[float] = None) -> Dict[Tuple[str, str], float]:
         """
-        Advanced dynamic range construction using comprehensive opponent stats.
+        Modernized entry point for heuristic range construction.
         
         Args:
-            action_history: List of actions taken by opponent
-            current_board: Current board state  
-            current_pot: Current pot size
-            opponent_stats: Optional dict with comprehensive poker stats
+            game_state: Complete GameState object with all game information
+            action_sequencer: Modern ActionSequencer with current street actions
+            opponent_stats: Opponent statistics from StatsTracker
             
         Returns:
             Dictionary of {hand: weight} representing opponent's likely range
         """
-        # NEW: Use comprehensive stats-based approach when available
+        # 1. Adapt the new inputs to the old format internally
+        adapted_history = self._adapt_sequencer_to_history(game_state, action_sequencer)
+        
+        # Convert community cards to strings (add import at top if needed)
+        current_board = []
+        if hasattr(game_state, 'community') and game_state.community:
+            try:
+                # Need to import card_to_string or implement it here
+                current_board = [self._card_to_string(c) for c in game_state.community]
+            except:
+                # Fallback: simple conversion
+                current_board = [str(c) for c in game_state.community]
+        
+        # 2. Call the original, powerful heuristic logic with adapted data
         if opponent_stats and opponent_stats.get('sample_size', 0) >= 10:
             return self._construct_range_from_comprehensive_stats(
-                action_history, current_board, opponent_stats
+                adapted_history, current_board, opponent_stats
             )
-        
-        # LEGACY: Use basic VPIP/PFR approach for small samples
-        elif opponent_stats and len(action_history) > 0:
-            last_action = action_history[-1].get('action', 1)
+        elif opponent_stats and len(adapted_history) > 0:
+            last_action = adapted_history[-1].get('action', 1)
             return self.construct_range_from_stats(opponent_stats, last_action)
+        else:
+            # Fallback to a basic VPIP range if no other info is available
+            vpip = opponent_stats.get('vpip', 0.5) if opponent_stats else 0.5
+            return self.construct_range_from_stats({'vpip': vpip, 'pfr': 0.2}, 1)
+    
+    def _card_to_string(self, card_id: int) -> str:
+        """Convert card ID to string representation for board processing."""
+        if card_id < 0 or card_id > 51:
+            return 'As'  # Fallback
         
-        # FALLBACK: Use static ranges when no stats available
-        board_stage = len(current_board)
+        rank_id = card_id // 4
+        suit_id = card_id % 4
         
-        # Pre-flop Logic
-        if board_stage == 0:
-            # Simple BTN open-raise (most common scenario)
-            if len(action_history) == 1 and action_history[0].get('action') == 2:
-                return self.BTN_OPEN_RAISE_WEIGHTED
-            
-            # BB 3-bet (re-raise) scenario
-            elif len(action_history) >= 2 and action_history[-1].get('action') == 2:
-                # Tighter range for 3-betting
-                return self._get_3bet_range()
-            
-            # BB calling/defending
-            elif len(action_history) >= 1 and action_history[-1].get('action') == 1:
-                return self.BB_DEFEND_WEIGHTED
-            
-            # Default to BTN opening range
-            return self.BTN_OPEN_RAISE_WEIGHTED
+        ranks = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A']
+        suits = ['c', 'd', 'h', 's']
         
-        # Post-flop Logic (Flop = 3 cards, Turn = 4, River = 5)
-        elif board_stage >= 3:
-            # Determine if this looks like a continuation bet
-            # (opponent was pre-flop aggressor and is betting)
-            preflop_had_aggression = any(action.get('action') == 2 for action in action_history[:2])
-            recent_bet = action_history and action_history[-1].get('action') == 2
-            
-            if preflop_had_aggression and recent_bet:
-                # Looks like a continuation bet
-                return self.FLOP_CBET_WEIGHTED
-            
-            elif action_history and action_history[-1].get('action') == 1:
-                # Called/check-called
-                return self.FLOP_CALL_WEIGHTED
-            
-            else:
-                # Mixed/unclear action - use combined range
-                return self._combine_ranges([
-                    (self.FLOP_CBET_WEIGHTED, 0.4),
-                    (self.FLOP_CALL_WEIGHTED, 0.6)
-                ])
-        
-        # Default fallback
-        return self.BTN_OPEN_RAISE_WEIGHTED
+        return ranks[rank_id] + suits[suit_id]
     
     def _get_3bet_range(self) -> Dict[Tuple[str, str], float]:
         """Return a tighter range for 3-betting scenarios."""
@@ -544,22 +536,21 @@ class RangeConstructorNN:
     """
     
     def __init__(self, model_path: str = 'range_predictor/range_predictor.pt', 
-                 feature_dim: int = 184, fallback_constructor: RangeConstructor = None):
+                 feature_dim: int = 184):
         """
-        Initialize the NN Range Constructor.
+        Initialize the NN Range Constructor with modernized heuristic fallback.
         
         Args:
             model_path: Path to the trained range prediction model
             feature_dim: Expected feature vector dimension
-            fallback_constructor: RangeConstructor to use if NN fails
         """
         self.model_path = model_path
         self.feature_dim = feature_dim
         self.model = None
         self.device = torch.device('cpu')  # Use CPU for inference
         
-        # Fallback to traditional range constructor if NN fails
-        self.fallback_constructor = fallback_constructor or RangeConstructor()
+        # The fallback is now a clean, modern component
+        self.fallback_constructor = RangeConstructor()
         
         # Hand rankings for range construction
         self.HAND_RANKINGS = self.fallback_constructor.HAND_RANKINGS
@@ -588,32 +579,30 @@ class RangeConstructorNN:
             print(f"Error loading range prediction model: {e}, using fallback")
             self.model = None
     
-    def construct_range(self, action_history: List[Dict], current_board: List[str],
-                       current_pot: int, opponent_stats: Dict = None, 
-                       public_features: List[float] = None) -> Dict[Tuple[str, str], float]:
+    def construct_range(self, game_state, action_sequencer, opponent_stats: Dict, public_features: List[float] = None) -> Dict[Tuple[str, str], float]:
         """
-        Construct opponent range using neural network predictions.
+        Uses NN if available, otherwise falls back to the modernized heuristic constructor.
         
         Args:
-            action_history: List of actions taken by opponent
-            current_board: Current board state
-            current_pot: Current pot size
-            opponent_stats: Opponent statistics (for fallback)
-            public_features: Complete feature vector for opponent
+            public_features: Complete feature vector for opponent (for NN)
+            game_state: Complete GameState object
+            action_sequencer: Modern ActionSequencer with current street actions
+            opponent_stats: Opponent statistics from StatsTracker
             
         Returns:
             Dictionary of {hand: weight} representing opponent's likely range
         """
-        # Use NN prediction if model is loaded and features are available
+        # PRIMARY STRATEGY: Use the Neural Network if it's ready
         if self.model is not None and public_features is not None:
             try:
                 return self._construct_range_from_nn(public_features)
             except Exception as e:
-                print(f"Error in NN range construction: {e}, falling back")
+                print(f"⚠️ NN range construction failed: {e}. Falling back to heuristics.")
         
-        # Fallback to traditional range construction
+        # FALLBACK STRATEGY: Use heuristics for bootstrapping or if NN fails
+        # The fallback call is now clean and uses modern components
         return self.fallback_constructor.construct_range(
-            action_history, current_board, current_pot, opponent_stats
+            game_state, action_sequencer, opponent_stats, public_features
         )
     
     def _construct_range_from_nn(self, features: List[float]) -> Dict[Tuple[str, str], float]:

@@ -143,7 +143,7 @@ class LiveFeatureDebugger:
         hole_cards = self.extract_cards_from_one_hot(schema, "hole")
         made_hand = self.get_made_hand_string(schema)
         hand_strength = schema.current_additional.hand_strength
-        equity_vs_range = schema.current_strategic.equity_vs_range if hasattr(schema.current_strategic, 'equity_vs_range') else 0.0
+        hand_vs_range = schema.current_strategic.hand_vs_range
         
         # Stack and pot info
         stack = schema.self_current_stack
@@ -158,7 +158,7 @@ class LiveFeatureDebugger:
         # Format as single line
         hole_str = ' '.join(hole_cards) if hole_cards else "??"
         
-        return f"    [{player_name}: {hole_str} ({made_hand}) | Str: {hand_strength:.1%} | Eq: {equity_vs_range:.1%} | Stack: {actual_stack_bb:.0f}BB | Odds: {pot_odds:.2f} | T. Commit: {commitment:.1%} | Pos: {position} | Facing: {facing}]"
+        return f"    [{player_name}: {hole_str} ({made_hand}) | Str: {hand_strength:.1%} | Eq: {hand_vs_range:.1%} | Stack: {actual_stack_bb:.0f}BB | Odds: {pot_odds:.2f} | T. Commit: {commitment:.1%} | Pos: {position} | Facing: {facing}]"
     
     def format_detailed_features(self, schema: PokerFeatureSchema, player_name: str = "P0") -> str:
         """
@@ -178,8 +178,8 @@ class LiveFeatureDebugger:
         
         # Strength metrics
         hand_strength = schema.current_additional.hand_strength
-        equity_vs_range = schema.current_strategic.equity_vs_range if hasattr(schema.current_strategic, 'equity_vs_range') else 0.0
-        lines.append(f"    📊 Strength: {hand_strength:.1%} (raw) | {equity_vs_range:.1%} (vs range)")
+        hand_vs_range = schema.current_strategic.hand_vs_range if hasattr(schema.current_strategic, 'hand_vs_range') else 0.0
+        lines.append(f"    📊 Strength: {hand_strength:.1%} (raw) | {hand_vs_range:.1%} (vs range)")
         
         # Delta features (if applicable)
         additional_deltas = schema.current_additional
@@ -451,22 +451,21 @@ class LiveFeatureDebugger:
 
     def is_interesting_scenario(self, schema: PokerFeatureSchema, game_state) -> bool:
         """
-        Detect if the current game situation is interesting enough for an exhaustive dump.
-        Look for check-raises and 3-bets ONLY on the River.
+        Detects if the current game situation is interesting enough for an exhaustive dump.
+        Looks for 3-bets on any street, large flop bets, or any all-in.
         """
-        # Check if we're on the River
-        if schema.current_stage.is_river != 1.0:
-            return False
-        
-        # Look for strategic actions in current street (River only)
         self_seq = schema.self_current_sequence
         opp_seq = schema.opponent_current_sequence
-        
-        # Trigger only on River check-raises and 3-bets
-        if (self_seq.did_3bet == 1.0 or opp_seq.did_3bet == 1.0 or
-            self_seq.did_check_raise == 1.0 or opp_seq.did_check_raise == 1.0):
+
+        # --- Trigger 1: Any all-in situation on any street ---
+        if self_seq.did_go_all_in == 1.0 or opp_seq.did_go_all_in == 1.0:
             return True
-        
+
+        # --- Trigger 2: 3-bet or 4-bet on ANY street. --- 
+        # We removed the `if is_preflop:` condition.
+        if self_seq.did_3bet == 1.0 or opp_seq.did_3bet == 1.0:
+            return True
+
         return False
     
     def describe_scenario(self, schema: PokerFeatureSchema, game_state) -> str:
@@ -521,7 +520,7 @@ class LiveFeatureDebugger:
             parts.append(f"LowSPR-{spr:.1f}")
         
         # Add equity if close
-        equity = schema.current_strategic.equity_vs_range if hasattr(schema.current_strategic, 'equity_vs_range') else 0.0
+        equity = schema.current_strategic.hand_vs_range if hasattr(schema.current_strategic, 'hand_vs_range') else 0.0
         if 0.4 <= equity <= 0.6:
             parts.append(f"CloseEquity-{equity:.1%}")
         

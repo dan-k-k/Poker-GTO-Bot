@@ -1,9 +1,10 @@
-# trainingL1/equity_calculator_standalone.py
+# trainingL1/equity_calculator.py
 # Pure equity calculation - separated from range construction
 
 import random
 from typing import List, Tuple, Dict
-from deuces import Card, Evaluator
+import treys
+from treys import Card, Evaluator
 
 
 class EquityCalculator:
@@ -30,22 +31,19 @@ class EquityCalculator:
         except ValueError:
             return 0.5  # Return default if card strings are invalid
 
-        # 2. Create a full deuces deck and remove the known cards.
+        # 2. Create a full treys deck and remove the known cards.
         # This is much cleaner than managing our own integer deck.
         used_cards = set(my_hand_deuces + board_deuces)
         
-        # Create full deck manually since deuces doesn't expose Card.DECK
-        ranks = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A']
-        suits = ['c', 'd', 'h', 's']
-        full_deck = [Card.new(rank + suit) for rank in ranks for suit in suits]
-        deck = [c for c in full_deck if c not in used_cards]
+        # AFTER (cleaner and correct for treys):
+        deck = [c for c in treys.Deck.GetFullDeck() if c not in used_cards]
 
         # 3. Prepare for weighted sampling from the opponent's range.
         hands_in_range = list(opponent_range.keys())
         weights = list(opponent_range.values())
         
         wins, ties, total_sims = 0, 0, 0
-        
+
         for _ in range(num_simulations):
             # 4. Sample opponent's hand and convert to deuces format.
             opp_hand_str = random.choices(hands_in_range, weights=weights, k=1)[0]
@@ -58,7 +56,8 @@ class EquityCalculator:
             if any(c in used_cards for c in opp_hand_deuces):
                 continue
             
-            sim_deck = [c for c in deck if c not in opp_hand_deuces]
+            opp_hand_set = set(opp_hand_deuces)
+            sim_deck = [c for c in deck if c not in opp_hand_set]
 
             # 6. Deal the runout DIRECTLY from the deuces deck. No more conversions!
             cards_needed = 5 - len(board_deuces)
@@ -85,3 +84,4 @@ class EquityCalculator:
             return 0.5
             
         return (wins + ties * 0.5) / total_sims
+    

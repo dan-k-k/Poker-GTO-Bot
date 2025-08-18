@@ -3,18 +3,12 @@
 
 from typing import Dict, List, Optional
 
-try:
-    from .equity_calculator import EquityCalculator
-    from .range_constructors import RangeConstructor
-    from ..analyzers.event_identifier import HandEventIdentifier, HandHistory, RawAction, ActionType, Street
-except ImportError:
-    # Handle local testing paths
-    import sys
-    import os
-    sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-    from equity_calculator import EquityCalculator
-    from range_constructors import RangeConstructor
-    from analyzers.event_identifier import HandEventIdentifier, HandHistory, RawAction, ActionType, Street
+# 1. Use relative imports (single dot) for files in the same package (trainingL1)
+from .equity_calculator import EquityCalculator
+from .range_constructors import RangeConstructor
+
+# 2. Use absolute imports (from the project root) for files in other packages
+from analyzers.event_identifier import HandEventIdentifier, HandHistory, RawAction, ActionType, Street
 
 
 class HandHistoryManager:
@@ -211,7 +205,9 @@ class RewardShaper:
         self.range_constructor = range_constructor
 
     def calculate_reward(self, player_id: int, action: int, amount: Optional[int],
-                        old_state: Dict, new_state: Dict, opponent_action_history: List[Dict],
+                        old_state: Dict, new_state: Dict, 
+                        game_state_before_action, action_sequencer,
+                        opponent_public_features: List[float], 
                         opponent_stats: Dict) -> float:
         """
         Calculate immediate reward based on equity change.
@@ -223,9 +219,12 @@ class RewardShaper:
             my_hand = self._get_hand_cards(player_id, old_state)
             old_board = self._get_board_cards(old_state)
             
-            # Use comprehensive opponent stats passed from trainer
+            # Pass the modernized arguments to the range constructor
             old_opponent_range = self.range_constructor.construct_range(
-                opponent_action_history, old_board, old_state.get('pot', 100), opponent_stats
+                public_features=opponent_public_features,
+                game_state=game_state_before_action,
+                action_sequencer=action_sequencer,
+                opponent_stats=opponent_stats
             )
             old_equity = self.equity_calculator.calculate_equity(
                 my_hand, old_board, old_opponent_range, num_simulations=200  # Fast for training
@@ -242,9 +241,13 @@ class RewardShaper:
                 # Hand continues - recalculate equity
                 new_board = self._get_board_cards(new_state)
                 
-                # Construct new range with comprehensive opponent stats
+                # For simplicity, re-use the same opponent public features for new state
+                # A more advanced implementation might re-calculate features for the new state
                 new_opponent_range = self.range_constructor.construct_range(
-                    opponent_action_history, new_board, new_state.get('pot', 100), opponent_stats
+                    public_features=opponent_public_features,
+                    game_state=game_state_before_action,  # Re-use for now
+                    action_sequencer=action_sequencer,
+                    opponent_stats=opponent_stats
                 )
                 
                 new_equity = self.equity_calculator.calculate_equity(
@@ -357,3 +360,4 @@ class SessionTracker:
             print(f"🏆 Episode Sessions Won: P0={self.episode_session_wins['player_0']}, P1={self.episode_session_wins['player_1']} ({total_sessions} total)")
         else:
             print("🏆 Episode Sessions Won: No completed sessions")
+

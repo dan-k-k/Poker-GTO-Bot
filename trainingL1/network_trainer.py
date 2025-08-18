@@ -35,9 +35,9 @@ class NetworkTrainer:
         self.as_entropy_weight_end = 0.1       # Ending entropy weight (decays over time)
         
         # 🎯 BR Loss Weights - Tunable hyperparameters (Updated for stability)
-        self.br_policy_weight = 5.6     # Policy loss (base weight) - Slightly reduced from 5.0
-        self.br_value_weight = 8.0      # Value function loss (vf_coef) - Increased from 0.5
-        self.br_entropy_weight = 0.05   # Entropy bonus (ent_coef)
+        self.br_policy_weight = 1.0     # Policy loss (base weight) - Slightly reduced from 5.0
+        self.br_value_weight = 0.5      # Value function loss (vf_coef) - Increased from 0.5
+        self.br_entropy_weight = 0.1   # Entropy bonus (ent_coef)
         self.br_bet_weight = 1.0        # Bet sizing loss
         
         # Training state
