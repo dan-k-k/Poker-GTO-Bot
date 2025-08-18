@@ -155,7 +155,7 @@ class DataCollector:
                     if should_log_hand:
                         self._handle_exhaustive_dump(schema, current_episode, p0_role, hand_log)
                     
-                    action, amount = p0_policy(features, state)
+                    action, amount, debug_info = p0_policy(features, state)
                     
                     # Store experience data
                     experience = {
@@ -190,16 +190,21 @@ class DataCollector:
                         )
                         hand_training_buffer.append({'features': public_features, 'seat_id': 1})
                     
-                    action, amount = p1_policy(features_before, state)
+                    action, amount, _ = p1_policy(features_before, state)
                     
 
-                # Add feature logging for detailed hand analysis
-                if should_log_hand:
-                    player_name = f"P{current_player}({p0_role if current_player == 0 else 'OPP'})"
-                    schema_to_log = schema if current_player == 0 else (schema_before if 'schema_before' in locals() else None)
+                # Add feature logging for P1 (opponent) immediately
+                if should_log_hand and current_player == 1:
+                    player_name = f"P{current_player}(OPP)"
+                    schema_to_log = schema_before if 'schema_before' in locals() else None
                     if schema_to_log:
                         detailed = self.live_feature_debugger.should_log_detailed_features(schema_to_log, action, amount)
-                        feature_log = format_features_for_hand_log(schema_to_log, player_name, action, amount, detailed=detailed)
+                        feature_log = format_features_for_hand_log(
+                            schema_to_log, player_name, action, amount, 
+                            detailed=detailed,
+                            network_outputs=None,
+                            equity_reward=None
+                        )
                         hand_log.append(feature_log)
                     
                     # Log the action taken
@@ -247,6 +252,21 @@ class DataCollector:
                         opponent_stats=stats_p1   # P1's stats for range construction
                     )
                     hand_experiences[-1]['equity_reward'] = equity_reward
+                    
+                    # Add feature logging for P0 after equity reward calculation
+                    if should_log_hand:
+                        player_name = f"P0({p0_role})"
+                        detailed = self.live_feature_debugger.should_log_detailed_features(schema, action, amount)
+                        feature_log = format_features_for_hand_log(
+                            schema, player_name, action, amount, 
+                            detailed=detailed,
+                            network_outputs=debug_info,
+                            equity_reward=equity_reward
+                        )
+                        hand_log.append(feature_log)
+                        
+                        # Log the action taken
+                        self._log_action(hand_log, 0, action, amount, old_state)
                 
                 # Update state for next iteration
                 state = new_state
@@ -467,7 +487,11 @@ class DataCollector:
                 exp['session_hand'] = session_info['session_hand']
         
         # Write hand log if needed
-        if should_log_hand and hand_log:            
+        if should_log_hand and hand_log:
+            # Add profit reward summary
+            profit_reward_unweighted = hand_profit / 200.0
+            hand_log.append(f"- HAND PROFIT: {hand_profit} chips (P_Rew: {profit_reward_unweighted:+.4f})")
+            
             if self.env.state.winners:
                 winner_str = "P0" if 0 in self.env.state.winners else "P1"
                 # The profit for P0 is the amount won.

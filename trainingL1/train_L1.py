@@ -35,7 +35,7 @@ class NFSPTrainer:
     def __init__(self, num_players=2, mean_stack_bb=100, big_blind_chips=2, 
                  session_length=20, std_stack_bb=35, min_stack_bb_percent=0.15,
                  enable_stack_depth_simulation=True, loss_weight_config='default',
-                 profit_reward_weight=0.7, equity_reward_weight=0.3,
+                 profit_reward_weight=0.3, equity_reward_weight=0.7,
                  bootstrap_episodes=10, br_frequency=2, as_frequency=1):
                 
         # 1. Core Parameters (single source of truth)

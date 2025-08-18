@@ -134,7 +134,8 @@ class LiveFeatureDebugger:
         
         return ', '.join(facing) if facing else "Nothing"
     
-    def format_concise_features(self, schema: PokerFeatureSchema, player_name: str = "P0") -> str:
+    def format_concise_features(self, schema: PokerFeatureSchema, player_name: str = "P0", 
+                                 network_outputs: dict = None, equity_reward: Optional[float] = None) -> str:
         """
         Format the most important features into a concise, single-line summary.
         Perfect for action logging in hand histories.
@@ -155,10 +156,25 @@ class LiveFeatureDebugger:
         position = self.get_position_string(schema)
         facing = self.get_facing_string(schema)
         
+        # Format network outputs
+        if network_outputs and 'action_probs' in network_outputs:
+            probs = network_outputs['action_probs']
+            # Assuming action order is Fold, Call, Raise
+            prob_str = f"P:[F:{probs[0]:.0%}, C:{probs[1]:.0%}, R:{probs[2]:.0%}]"
+        else:
+            prob_str = "P:[--]"
+
+        # Format equity reward (if available)
+        if equity_reward is not None:
+            rew_str = f"E_Rew:{equity_reward:+.3f}"
+        else:
+            rew_str = "E_Rew:--"
+
         # Format as single line
         hole_str = ' '.join(hole_cards) if hole_cards else "??"
         
-        return f"    [{player_name}: {hole_str} ({made_hand}) | Str: {hand_strength:.1%} | Eq: {hand_vs_range:.1%} | Stack: {actual_stack_bb:.0f}BB | Odds: {pot_odds:.2f} | T. Commit: {commitment:.1%} | Pos: {position} | Facing: {facing}]"
+        return f"    [{player_name}: {hole_str} ({made_hand}) | Str: {hand_strength:.1%} | Eq: {hand_vs_range:.1%} | " \
+               f"{prob_str} | {rew_str} | Stack: {actual_stack_bb:.0f}BB | Facing: {facing}]"
     
     def format_detailed_features(self, schema: PokerFeatureSchema, player_name: str = "P0") -> str:
         """
@@ -530,7 +546,8 @@ class LiveFeatureDebugger:
 # Convenience function for quick integration
 def format_features_for_hand_log(schema: PokerFeatureSchema, player_name: str = "P0", 
                                 action: int = None, amount: Optional[int] = None, 
-                                detailed: bool = False) -> str:
+                                detailed: bool = False, network_outputs: dict = None,
+                                equity_reward: Optional[float] = None) -> str:
     """
     Quick function to format features for hand history logging.
     
@@ -564,7 +581,7 @@ def format_features_for_hand_log(schema: PokerFeatureSchema, player_name: str = 
         return result
     else:
         # Concise single-line format
-        return debugger.format_concise_features(schema, player_name)
+        return debugger.format_concise_features(schema, player_name, network_outputs, equity_reward)
 
 
 def dump_all_features_to_log(schema: PokerFeatureSchema, player_name: str = "P0", context: dict = None) -> str:

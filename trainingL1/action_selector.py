@@ -23,20 +23,26 @@ class ActionSelector:
         """Set the current episode for exploration noise calculation."""
         self.current_episode = episode
     
-    def _get_network_action(self, network, features, state, bet_config) -> Tuple[int, Optional[int]]:
+    def _get_network_action(self, network, features, state, bet_config) -> Tuple[int, Optional[int], dict]:
         """Generic method to get action from any network with specified bet sizing config."""
         network.eval()  # Set to eval mode for inference
         with torch.no_grad():
             features_tensor = torch.FloatTensor(features).unsqueeze(0)
             predictions = network(features_tensor)
             action_probs = predictions['action_probs'][0].numpy()
+            
+            # Extract debug info
+            debug_info = {
+                'action_probs': action_probs.copy(),
+                'state_value': predictions.get('state_values', torch.tensor([0.0]))[0].numpy() if 'state_values' in predictions else 0.0
+            }
         network.train()  # Reset to training mode
         
         legal_actions = state['legal_actions']
         
         # Handle edge case of no legal actions
         if not legal_actions:
-            return 1, None  # Default to check/call
+            return 1, None, {}  # Default to check/call
         
         # Filter and normalize probabilities
         filtered_probs = np.zeros(3)
@@ -73,7 +79,7 @@ class ActionSelector:
             if amount_to_call > 0:
                 amount = amount_to_call
         
-        return action, amount
+        return action, amount, debug_info
     
     def _determine_bet_size(self, state, sizing_output, player_id, config) -> int:
         """
@@ -112,7 +118,7 @@ class ActionSelector:
         
         return int(final_chips)
     
-    def _get_average_strategy_action(self, features, state) -> Tuple[int, Optional[int]]:
+    def _get_average_strategy_action(self, features, state) -> Tuple[int, Optional[int], dict]:
         """Get action from average strategy network (GTO approximation)."""
         bet_config = {
             'noise_strength': 0.1,
@@ -122,7 +128,7 @@ class ActionSelector:
         }
         return self._get_network_action(self.avg_pytorch_net, features, state, bet_config)
     
-    def _get_best_response_action(self, features, state) -> Tuple[int, Optional[int]]:
+    def _get_best_response_action(self, features, state) -> Tuple[int, Optional[int], dict]:
         """Get action from best response network (exploiter)."""
         bet_config = {
             'noise_strength': 0.15,
@@ -152,11 +158,11 @@ class ActionSelector:
         }
         return self._determine_bet_size(state, sizing_output, player_id, config)
     
-    def _get_tight_aggressive_action(self, features, state) -> Tuple[int, Optional[int]]:
+    def _get_tight_aggressive_action(self, features, state) -> Tuple[int, Optional[int], dict]:
         """Simple tight-aggressive strategy for exploitability testing."""
         legal_actions = state['legal_actions']
         if not legal_actions:
-            return 1, None  # Default fallback
+            return 1, None, {}  # Default fallback
             
         hand_strength = features[0]  # First feature is hand strength
         
@@ -164,37 +170,37 @@ class ActionSelector:
         if state['stage'] == 0:
             if hand_strength > 0.6:  # Strong hands only
                 if 2 in legal_actions:
-                    return 2, self._determine_gto_bet_size(state, [0.7], state['to_move'])
+                    return 2, self._determine_gto_bet_size(state, [0.7], state['to_move']), {}
                 elif 1 in legal_actions:
-                    return 1, None
+                    return 1, None, {}
                 else:
-                    return legal_actions[0], None  # Fallback to first legal action
+                    return legal_actions[0], None, {}  # Fallback to first legal action
             else:
                 # Try to fold, but fallback to legal action if fold not available
                 if 0 in legal_actions:
-                    return 0, None
+                    return 0, None, {}
                 else:
-                    return legal_actions[0], None
+                    return legal_actions[0], None, {}
         
         # Postflop: aggressive with strong hands, fold weak hands
         if hand_strength > 0.5:
             if 2 in legal_actions:
-                return 2, self._determine_gto_bet_size(state, [0.8], state['to_move'])
+                return 2, self._determine_gto_bet_size(state, [0.8], state['to_move']), {}
             elif 1 in legal_actions:
-                return 1, None
+                return 1, None, {}
             else:
-                return legal_actions[0], None
+                return legal_actions[0], None, {}
         else:
             if 0 in legal_actions:
-                return 0, None
+                return 0, None, {}
             else:
-                return legal_actions[0], None
+                return legal_actions[0], None, {}
     
-    def _get_loose_passive_action(self, features, state) -> Tuple[int, Optional[int]]:
+    def _get_loose_passive_action(self, features, state) -> Tuple[int, Optional[int], dict]:
         """Simple loose-passive strategy for exploitability testing."""
         legal_actions = state['legal_actions']
         if not legal_actions:
-            return 1, None  # Default fallback
+            return 1, None, {}  # Default fallback
             
         hand_strength = features[0]  # First feature is hand strength
         
@@ -202,28 +208,28 @@ class ActionSelector:
         if state['stage'] == 0:
             if hand_strength > 0.2:  # Call with many hands
                 if 1 in legal_actions:
-                    return 1, None
+                    return 1, None, {}
                 elif 2 in legal_actions:
-                    return 2, self._determine_gto_bet_size(state, [0.5], state['to_move'])
+                    return 2, self._determine_gto_bet_size(state, [0.5], state['to_move']), {}
                 else:
-                    return legal_actions[0], None
+                    return legal_actions[0], None, {}
             else:
                 if 0 in legal_actions:
-                    return 0, None
+                    return 0, None, {}
                 else:
-                    return legal_actions[0], None
+                    return legal_actions[0], None, {}
         
         # Postflop: passive - mostly call/check, rarely bet
         if hand_strength > 0.3:
             if 1 in legal_actions:
-                return 1, None
+                return 1, None, {}
             elif 2 in legal_actions and random.random() < 0.2:  # Rarely bet
-                return 2, self._determine_gto_bet_size(state, [0.5], state['to_move'])
+                return 2, self._determine_gto_bet_size(state, [0.5], state['to_move']), {}
             else:
-                return legal_actions[0], None
+                return legal_actions[0], None, {}
         else:
             if 0 in legal_actions:
-                return 0, None
+                return 0, None, {}
             else:
-                return legal_actions[0], None
+                return legal_actions[0], None, {}
             

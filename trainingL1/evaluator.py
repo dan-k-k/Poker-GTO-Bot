@@ -63,19 +63,19 @@ class Evaluator:
                     
                     if current_player == 0:  # Average strategy (being tested)
                         features, _ = self.feature_extractor.extract_features(self.env.state, 0, role="AS")
-                        action, amount = self.action_selector._get_average_strategy_action(features, state)
+                        action, amount, _ = self.action_selector._get_average_strategy_action(features, state)
                     else:  # Opponent strategy
                         features, _ = self.feature_extractor.extract_features(self.env.state, 1, role="BR")
                         
                         if strategy_idx == 0:
                             # Best response network
-                            action, amount = self.action_selector._get_best_response_action(features, state)
+                            action, amount, _ = self.action_selector._get_best_response_action(features, state)
                         elif strategy_idx == 1:
                             # Tight aggressive strategy
-                            action, amount = self.action_selector._get_tight_aggressive_action(features, state)
+                            action, amount, _ = self.action_selector._get_tight_aggressive_action(features, state)
                         else:
                             # Loose passive strategy
-                            action, amount = self.action_selector._get_loose_passive_action(features, state)
+                            action, amount, _ = self.action_selector._get_loose_passive_action(features, state)
                     
                     state, _, done = self.env.step(action, amount)
                 
