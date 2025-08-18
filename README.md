@@ -1,94 +1,57 @@
-# Texas Hold'em GTO Poker AI [INCOMPLETE]
+Advanced GTO Poker AI 🤖
+An implementation of a Game Theory Optimal (GTO) poker AI using Neural Fictitious Self-Play (NFSP). The agent learns a near-unexploitable strategy for two-player No-Limit Texas Hold'em.
 
-A modular poker AI training system with schema-aligned feature extraction and unified analyzer architecture for Game Theory Optimal (GTO) training.
+Key Features
+NFSP Architecture: A Best Response (BR) agent learns to exploit, while an Average Strategy (AS) agent learns to be unexploitable.
 
-Current aim is to provide the AI with thorough equity and implied odds calculations by predicting opponent's range. 
+Advanced Feature Engineering: Uses a comprehensive feature vector including raw game state, action sequences, and strategic features.
 
-Goals include: Debugging -> enhanced GTO convergence -> multi-way action (currently trains for heads-up) -> integration with a greedy exploiter layer that looks closer at opponent stats -> make playable online – anyone can practise and discover their own hidden tendencies.
+Equity-Based Rewards: The BR agent learns from a dense, equity-based reward signal for faster learning.
 
-Delete all files in the training_output folder if you would like to train from zero.
+Opponent and Self Modeling: Leverages statistical models of both players to inform strategy.
 
-## Quick Start
+Curriculum Learning: Follows a phased training schedule for stable convergence.
 
-```bash
-# Train the GTO agent (Layer 1 - current primary training) [currently debugging]
-python trainingL1/train_L1.py
+⚙️ Installation
+```Bash
+# 1. Clone the repository
+git clone <your_repository_url>
+cd your_repository_name
 
-# Play against an opponent [currently performs random actions, not GTO]
-python playgame.py
+# 2. Create and activate a Python virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# 3. Install the required packages
+pip install -r requirements.txt
 ```
+🚀 Training Workflow
+Training follows a curriculum to ensure stable convergence. The process is to first bootstrap a basic agent, then train a model to predict opponent ranges, and finally, alternate between the two to iteratively improve.
 
-## System Architecture
+1. Bootstrap Agent & Generate Initial Data
 
-### Core Components
+Run the main training for ~100 episodes. This uses a heuristic to teach the agent basics and create the first dataset for the range predictor.
 
-- **TexasHoldemEnvNew.py**: Enhanced poker game engine with improved state management
-- **trainingL1/train_L1.py**: Layer 1 GTO training system with neural networks
-- **poker_agents.py**: Unified neural network architecture and base agent classes
-- **playgame.py**: PyQt GUI for human gameplay
-
-### Key Features
-
-- **Schema-Aligned Feature Extraction**: 184-dimensional feature space with poker_feature_schema.py
-- **Unified Analyzer Architecture**: Modular analyzers/ directory with specialized components
-- **History Tracking**: Comprehensive game state history with HistoryTracker
-- **Feature Contexts**: Static and dynamic context separation for efficient processing
-- **Layer 1 GTO Training**: Neural network-based training in trainingL1/ directory
-- **Modular Design**: Clear separation between core engine, feature extraction, and training
-- **Dynamic Opponent Modeling & Range Prediction**: Incorporates historical statistics (VPIP, PFR, etc.) and utilizes a novel auxiliary neural network for real-time opponent range estimation.
-
-## Architecture Overview
-
-### Feature Extraction Pipeline
-- **poker_core.py**: Core game state representation
-- **poker_feature_schema.py**: Master schema defining all feature categories  
-- **feature_extractor.py**: Schema-aligned extraction with unified analyzers
-- **feature_contexts.py**: Static/dynamic context management
-
-### Analyzer Components
-- **analyzers/hand_analyzer.py**: Hand strength and equity analysis
-- **analyzers/board_analyzer.py**: Board texture and draw analysis
-- **analyzers/current_street_analyzer.py**: Non-history current state features
-- **analyzers/history_analyzer.py**: History-tracked features with proper integration
-- **analyzers/history_tracking.py**: Comprehensive game state history tracking
-- **analyzers/event_identifier.py**: Monotonic signals on player playstyle (VPIP, PFR, etc.)
-
-### Range Predictor Components
-
-### Training System
-- **trainingL1/train_L1.py**: Main Layer 1 training script
-- **trainingL1/network_trainer.py**: Neural network training logic
-- **trainingL1/data_collector.py**: Training data collection and management
-- **trainingL1/evaluator.py**: Model evaluation and performance metrics
-
-## Development Guidelines
-
-1. **Follow schema alignment**: Use poker_feature_schema.py for all feature definitions
-2. **Modular development**: Keep analyzers, training, and core engine separate
-3. **History tracking**: Use HistoryTracker for all stateful feature extraction
-4. **Context separation**: Distinguish between static and dynamic contexts
-5. **Layer 1 focus**: Current development centers on trainingL1/ directory
-
-## File Structure
-
+```Bash
+python -m trainingL1.train_L1
 ```
-Poker/
-├── poker_core.py              # Core game state representation
-├── poker_feature_schema.py    # Master feature schema
-├── feature_extractor.py       # Schema-aligned feature extraction
-├── feature_contexts.py        # Context management
-├── analyzers/                 # Modular analysis components
-│   ├── hand_analyzer.py
-│   ├── board_analyzer.py  
-│   ├── current_street_analyzer.py
-│   ├── history_analyzer.py
-│   └── history_tracking.py
-├── trainingL1/               # Layer 1 training system
-│   ├── train_L1.py
-│   ├── network_trainer.py
-│   ├── data_collector.py
-│   └── evaluator.py
-├── TexasHoldemEnvNew.py      # Enhanced game engine
-├── poker_agents.py           # Agent architecture
-└── playgame.py              # GUI interface
+2. Train Initial Range Predictor
+
+Use the data from Step 1 to train the first version of the RangeNetwork.
+
+```Bash
+python -m range_predictor.train_range_predictor
+```
+3. Iterative Refinement
+
+Now, alternate between running the main agent training (which will automatically load and use the range model) and re-training the range predictor with the new, higher-quality data.
+
+```Bash
+# Run for another 200-300 episodes to generate better data
+python -m trainingL1.train_L1
+
+# Re-train the range predictor with the new data
+python -m range_predictor.train_range_predictor
+
+# Repeat this cycle
 ```

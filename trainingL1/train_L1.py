@@ -274,7 +274,7 @@ class NFSPTrainer:
                     print(f"\n💾 Saving progress and exiting gracefully...")
                     TrainingUtils.save_training_state(self)
                     TrainingUtils.save_models(self.avg_pytorch_net, self.br_pytorch_net, self.current_episode)
-                    print(f"🛑 Training stopped at episode {episode}. \nResume (full power) with: python trainingL1/train_L1.py\nResume (efficiency core macOS) with: taskpolicy -b python trainingL1/train_L1.py")
+                    print(f"🛑 Training stopped at episode {episode}. \nResume (full power) with: python -m trainingL1.train_L1\nResume (efficiency core macOS) with: taskpolicy -b python -m trainingL1.train_L1")
                     return
                 
                 print(f"\n{'='*60}")
