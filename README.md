@@ -15,8 +15,8 @@ An implementation of a Game Theory Optimal (GTO) poker AI using Neural Fictitiou
 ### ⚙️ Installation
 ```Bash
 # 1. Clone the repository
-git clone <your_repository_url>
-cd your_repository_name
+git clone https://github.com/dan-k-k/Poker-GTO-Bot
+cd Poker-GTO-Bot
 
 # 2. Create and activate a Python virtual environment
 python3 -m venv .venv
@@ -31,6 +31,8 @@ Training follows a curriculum to ensure stable convergence. The process is to fi
 #### 1. Bootstrap Agent & Generate Initial Data
 
 Run the main training for ~100 episodes. This uses a heuristic to teach the agent basics and create the first dataset for the range predictor.
+
+*Note: You are able to pause training at any time with Ctrl + C; resume with the usual command.*
 
 ```Bash
 python -m trainingL1.train_L1
