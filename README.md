@@ -1,18 +1,18 @@
-Advanced GTO Poker AI 🤖
+## Advanced GTO Poker AI 🤖
 An implementation of a Game Theory Optimal (GTO) poker AI using Neural Fictitious Self-Play (NFSP). The agent learns a near-unexploitable strategy for two-player No-Limit Texas Hold'em.
 
-Key Features
-NFSP Architecture: A Best Response (BR) agent learns to exploit, while an Average Strategy (AS) agent learns to be unexploitable.
+### Key Features
+- NFSP Architecture: A Best Response (BR) agent learns to exploit, while an Average Strategy (AS) agent learns to be unexploitable.
 
-Advanced Feature Engineering: Uses a comprehensive feature vector including raw game state, action sequences, and strategic features.
+- Advanced Feature Engineering: Uses a comprehensive feature vector including raw game state, action sequences, and strategic features.
 
-Equity-Based Rewards: The BR agent learns from a dense, equity-based reward signal for faster learning.
+- Equity-Based Rewards: The BR agent learns from a dense, equity-based reward signal for faster learning.
 
-Opponent and Self Modeling: Leverages statistical models of both players to inform strategy.
+- Opponent and Self Modeling: Leverages statistical models of both players to inform strategy.
 
-Curriculum Learning: Follows a phased training schedule for stable convergence.
+- Curriculum Learning: Follows a phased training schedule for stable convergence.
 
-⚙️ Installation
+### ⚙️ Installation
 ```Bash
 # 1. Clone the repository
 git clone <your_repository_url>
@@ -25,24 +25,24 @@ source .venv/bin/activate
 # 3. Install the required packages
 pip install -r requirements.txt
 ```
-🚀 Training Workflow
+### 🚀 Training Workflow
 Training follows a curriculum to ensure stable convergence. The process is to first bootstrap a basic agent, then train a model to predict opponent ranges, and finally, alternate between the two to iteratively improve.
 
-1. Bootstrap Agent & Generate Initial Data
+#### 1. Bootstrap Agent & Generate Initial Data
 
 Run the main training for ~100 episodes. This uses a heuristic to teach the agent basics and create the first dataset for the range predictor.
 
 ```Bash
 python -m trainingL1.train_L1
 ```
-2. Train Initial Range Predictor
+#### 2. Train Initial Range Predictor
 
 Use the data from Step 1 to train the first version of the RangeNetwork.
 
 ```Bash
 python -m range_predictor.train_range_predictor
 ```
-3. Iterative Refinement
+#### 3. Iterative Refinement
 
 Now, alternate between running the main agent training (which will automatically load and use the range model) and re-training the range predictor with the new, higher-quality data.
 
