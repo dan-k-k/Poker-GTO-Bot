@@ -10,7 +10,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from Poker.app.TexasHoldemEnv import TexasHoldemEnv
+from app.TexasHoldemEnv import TexasHoldemEnv
 from app.feature_extractor import FeatureExtractor
 from app.poker_agents import GTOPokerNet
 from app.stats_tracker import StatsTracker
