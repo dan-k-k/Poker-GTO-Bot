@@ -6,24 +6,24 @@ import numpy as np
 import copy
 from typing import List, Dict, Optional, Tuple
 
-from poker_core import GameState
-from feature_contexts import StaticContext, DynamicContext
+from app.poker_core import GameState
+from app.feature_contexts import StaticContext, DynamicContext
 
 # Import the master schema
-from poker_feature_schema import PokerFeatureSchema, CurrentStrategicFeatures, MyHandFeatures, CurrentAdditionalFeatures, AdditionalHistoryFeatures
+from app.poker_feature_schema import PokerFeatureSchema, CurrentStrategicFeatures, MyHandFeatures, CurrentAdditionalFeatures, AdditionalHistoryFeatures
 
 # Import new unified analyzers
-from analyzers.street_history_tracking import StreetHistoryTracker
-from analyzers.hand_analyzer import HandAnalyzer
-from analyzers.board_analyzer import BoardAnalyzer
-from analyzers.current_street_analyzer import CurrentStreetAnalyzer
-from analyzers.street_history_analyzer import StreetHistoryAnalyzer
-from analyzers.strategic_analyzer import StrategicAnalyzer
-from analyzers.action_sequencer import ActionSequencer
+from app.analyzers.street_history_tracking import StreetHistoryTracker
+from app.analyzers.hand_analyzer import HandAnalyzer
+from app.analyzers.board_analyzer import BoardAnalyzer
+from app.analyzers.current_street_analyzer import CurrentStreetAnalyzer
+from app.analyzers.street_history_analyzer import StreetHistoryAnalyzer
+from app.analyzers.strategic_analyzer import StrategicAnalyzer
+from app.analyzers.action_sequencer import ActionSequencer
 
 # Direct imports - no fallback to avoid circular imports
-from trainingL1.equity_calculator import EquityCalculator
-from trainingL1.range_constructors import RangeConstructorNN
+from app.trainingL1.equity_calculator import EquityCalculator
+from app.trainingL1.range_constructors import RangeConstructorNN
 
 
 class FeatureExtractor:

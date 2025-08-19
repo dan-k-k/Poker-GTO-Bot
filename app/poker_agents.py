@@ -5,8 +5,9 @@
 import torch
 import torch.nn as nn
 import numpy as np
+import random
 from typing import Dict, List, Tuple, Optional
-from feature_extractor import FeatureExtractor
+from app.feature_extractor import FeatureExtractor
 
 class GTOPokerNet(nn.Module):
     """
@@ -160,6 +161,64 @@ class GTOAgent(PokerAgent):
         """Reset for new hand."""
         super().new_hand()
         self.feature_extractor.new_hand()
+
+
+class RandomBot(PokerAgent):
+    """
+    A simple poker agent that makes random legal actions.
+    Useful for testing and as a baseline opponent.
+    """
+    def __init__(self, seat_id: int, aggression: float = 0.3):
+        """
+        Initializes the bot.
+        
+        Args:
+            seat_id: The seat ID of the player.
+            aggression: A float between 0.0 and 1.0. The probability
+                        of choosing to bet/raise when it's a legal option.
+        """
+        super().__init__(seat_id)
+        self.aggression = aggression
+
+    def compute_action(self, state: Dict, env) -> Tuple[int, Optional[int]]:
+        """
+        Chooses a random legal action, with a bias towards aggression.
+        """
+        legal_actions = state['legal_actions']
+
+        # If no actions are possible, default to a check/call action
+        if not legal_actions:
+            return 1, None
+
+        # 1. Decide if we want to be aggressive
+        # If raising is legal and our random roll is below our aggression level
+        if 2 in legal_actions and random.random() < self.aggression:
+            # Choose a random raise amount between the minimum and our stack size
+            min_raise = env._min_raise_amount(self.seat_id)
+            max_raise = state['stacks'][self.seat_id]
+
+            if min_raise and min_raise <= max_raise:
+                # To prevent errors if the only raise is all-in
+                if min_raise >= max_raise:
+                    amount = max_raise
+                else:
+                    amount = random.randint(min_raise, max_raise)
+                
+                return 2, amount
+
+        # 2. If not raising, choose another random legal action
+        # Create a list of non-aggressive actions available
+        fallback_actions = [action for action in legal_actions if action != 2]
+
+        if fallback_actions:
+            action = random.choice(fallback_actions)
+            return action, None
+        else:
+            # If only raising was an option but we chose not to, we must raise
+            # This is a rare edge case (e.g., must go all-in)
+            action = 2
+            amount = state['stacks'][self.seat_id]  # Go all-in
+            return action, amount
 
 
 # Backward compatibility alias

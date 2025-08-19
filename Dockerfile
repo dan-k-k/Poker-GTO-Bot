@@ -1,24 +1,24 @@
 # Poker/Dockerfile
 
-# 1. Start from a lean, official Python base image.
-FROM python:3.9-slim
-
-# 2. Set the working directory inside the container to /app.
+FROM python:3.13-slim
 WORKDIR /app
 
-# 3. Copy and install dependencies. This is done first to leverage
-#    Docker's layer caching, speeding up future builds.
+# First, install third-party dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN apt-get update && apt-get install -y \
+    fonts-dejavu-core \
+    && pip install --no-cache-dir -r requirements.txt \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
-# 4. Copy your entire application source code into the container.
-#    This includes playgame.py, visuals/, analyzers/, etc.
-COPY ./app .
+# Next, install your own application as a package
+COPY setup.py .
+COPY ./app /app/app
+RUN pip install -e .
 
-# 5. Copy your pre-trained models into a 'models' directory
-#    inside the container, where your code expects to find them.
+# Copy your models
 COPY ./models /app/models
 
-# 6. Set the default command to run when the container starts.
-#    This will launch your game.
-CMD ["python", "playgame.py"]
+# Expose the port and run the app
+EXPOSE 8501
+CMD ["streamlit", "run", "app/playgame.py"]

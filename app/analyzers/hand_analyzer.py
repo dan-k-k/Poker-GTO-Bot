@@ -6,7 +6,7 @@ import random
 import sys
 import os
 from typing import List, Dict
-from poker_core import HandEvaluator
+from app.poker_core import HandEvaluator
 from poker_feature_schema import MyHandFeatures
 from .board_analyzer import BoardAnalyzer
 

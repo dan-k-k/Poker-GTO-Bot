@@ -1,286 +1,159 @@
 # app/visuals.py
-
 import math
-from PyQt5.QtWidgets import QWidget
-from PyQt5.QtGui import QPainter, QColor, QFont, QPen, QFontMetrics
-from PyQt5.QtCore import Qt, QRectF, QPointF
+from PIL import Image, ImageDraw, ImageFont
 
-class PokerTableWidget(QWidget):
+# Helper to load a font. Add a basic font file or use a path to an existing one.
+try:
+    # Use the DejaVu font that we installed in the Docker container
+    dejavu_font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+    font_sm = ImageFont.truetype(dejavu_font_path, 18)
+    font_md = ImageFont.truetype(dejavu_font_path, 22)
+    font_lg = ImageFont.truetype(dejavu_font_path, 28)
+except IOError:
+    # Fallback for local testing if the font isn't on your Mac
+    print("DejaVu font not found, using default. Symbols may not appear.")
+    font_sm = ImageFont.load_default()
+    font_md = ImageFont.load_default()
+    font_lg = ImageFont.load_default()
+
+def create_table_image(state, env, show_all_cards=False):
     """
-    A custom QWidget to draw the poker table, cards, chips, and player info.
-    This encapsulates all drawing logic for the poker game.
+    Creates an image of the poker table from the current game state.
+    Returns a Pillow Image object.
     """
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setMinimumSize(600, 450) # Maintain aspect ratio roughly 4:3
-        self.state = None
-        self.env = None
-        self.show_all_holes = False
-        self.hands_in_data = 0
+    W, H = 800, 600  # Image dimensions
+    BG_COLOR = "#005500"
+    TABLE_COLOR = "#006400"
+    CARD_W, CARD_H = 50, 70
 
-    def set_game_data(self, state, env, show_all_holes, hands_in_data):
-        """
-        Updates the data used for drawing and requests a repaint.
-        """
-        self.state = state
-        self.env = env
-        self.show_all_holes = show_all_holes
-        self.hands_in_data = hands_in_data
-        self.update() # Request a repaint
+    img = Image.new('RGB', (W, H), color=BG_COLOR)
+    draw = ImageDraw.Draw(img, 'RGBA')
 
-    def paintEvent(self, event):
-        """
-        This method is called by PyQt whenever the widget needs to be redrawn.
-        All drawing operations are performed here.
-        """
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing) # For smoother graphics
+    # 1. Draw the table oval
+    table_rect = [(W * 0.1, H * 0.2), (W * 0.9, H * 0.8)]
+    draw.ellipse(table_rect, fill=TABLE_COLOR, outline="black")
 
-        if not self.state or not self.env:
-            # Display a message if game data is not yet available
-            painter.drawText(self.rect(), Qt.AlignCenter, "Game Not Started")
-            return
+    # 2. Draw community cards
+    cx, cy = W / 2, H / 2
+    card_spacing = CARD_W + 10
+    total_card_width = (len(state['community']) * card_spacing) - 10
+    start_x = cx - total_card_width / 2
+    for i, card_id in enumerate(state['community']):
+        _draw_card(draw, (start_x + i * card_spacing, cy - CARD_H / 2), card_id)
 
-        width = self.width()
-        height = self.height()
+    # 3. Draw Pot (now perfectly centered)
+    pot_text = f"Pot: {state['pot']}"
+    # --- IMPROVED CENTERING ---
+    pot_bbox = font_lg.getbbox(pot_text)
+    pot_w, pot_h = pot_bbox[2] - pot_bbox[0], pot_bbox[3] - pot_bbox[1]
+    draw.text((cx - pot_w / 2, cy + 40), pot_text, font=font_lg, fill="white")
+    # --- END IMPROVEMENT ---
 
-        # Scale factors for drawing based on widget size
-        scale_x = width / 800.0
-        scale_y = height / 600.0
+    # 4. Draw Players
+    num_players = env.num_players
+    player_radius = W * 0.3  # Reduced from 0.35 to bring players closer to center
+    
+    # Shift player center upward while keeping table center the same
+    player_cy = cy - 20  # Move players up by 50 pixels
+    
+    # --- NEW SECTION: Draw Dealer Button ---
+    dealer_pos = state['dealer_pos']
+    angle = (math.pi / 2) - (dealer_pos * (2 * math.pi / num_players))
+    # Position it slightly outside the player circle
+    btn_x = cx + (player_radius * 1.1) * math.cos(angle - 0.32) # Offset angle slightly
+    btn_y = player_cy - (player_radius * 1.1) * math.sin(angle - 0.32)
+    draw.ellipse([(btn_x - 15, btn_y - 15), (btn_x + 15, btn_y + 15)], fill="white", outline="black")
+    d_bbox = font_md.getbbox("D")
+    d_w, d_h = d_bbox[2] - d_bbox[0], d_bbox[3] - d_bbox[1]
+    draw.text((btn_x - d_w/2, btn_y - d_h/2), "D", font=font_md, fill="black")
+    # --- END NEW SECTION ---
+    
+    for i in range(num_players):
+        # Simple direct positioning: P0 at bottom, P1 at top
+        if i == 0:  # Player 0 (You) - at bottom
+            px = cx
+            py = player_cy + player_radius
+        else:  # Player 1 (Opponent) - at top  
+            px = cx
+            py = player_cy - player_radius
 
-        # 1) Draw the green poker-table “oval” background
-        table_width_ratio = 0.8
-        table_height_ratio = 0.5
-        table_x = width * (1 - table_width_ratio) / 2
-        table_y = height * (1 - table_height_ratio) / 2 + (height * 0.15 - height * (1 - 0.6) / 2)
-        table_rect = QRectF(table_x, table_y, width * table_width_ratio, height * table_height_ratio)
-        painter.setBrush(QColor("#005500"))
-        painter.setPen(Qt.NoPen)
-        painter.drawEllipse(table_rect)
-
-        # Draw hands in data counter (top right)
-        text_content = f"Hands in Data: {self.hands_in_data}"
-        font = QFont("Arial", int(16 * min(scale_x, scale_y))) # This font size remains the same
-        painter.setFont(font) 
-        font_metrics = QFontMetrics(font)
-        text_bounding_rect = font_metrics.boundingRect(text_content)
-
-        text_x_pos = width - int(20 * scale_x) - text_bounding_rect.width()
-        text_y_pos = int(5 * scale_y)
-        text_draw_rect = QRectF(text_x_pos, text_y_pos, text_bounding_rect.width(), text_bounding_rect.height())
-
-        painter.setBrush(QColor(255, 255, 255, 150))
-        painter.setPen(Qt.NoPen)
-        padding_x = 10 * scale_x
-        padding_y = 5 * scale_y
-        background_rect = text_draw_rect.adjusted(-padding_x, -padding_y, padding_x, padding_y)
-        painter.drawRoundedRect(background_rect, 0, 0)
-
-        painter.setPen(QColor(Qt.black))
-        painter.drawText(text_draw_rect, Qt.AlignLeft | Qt.AlignTop, text_content) 
-
-        # 2) Precompute “seat” positions
-        r = min(table_rect.width(), table_rect.height()) * 0.22
-        center_x, center_y = table_rect.center().x(), table_rect.center().y()
-        seat_positions = []
-        num_players = self.env.num_players
+        player_name = "You (P0)" if i == 0 else f"P{i}"
+        stack_text = f"Stack: {state['stacks'][i]}"
+        color = (255, 255, 255) if state['active'][i] else (128, 128, 128)
         
-        for i in range(num_players):
-            angle_i = math.pi/2 - i * (2 * math.pi / num_players)
-            x_i = center_x + r * math.cos(angle_i)
-            y_i = center_y + r * math.sin(angle_i)
-            seat_positions.append(QPointF(x_i, y_i))
-
-        # 2.5) Draw dealer button
-        dpos = self.state['dealer_pos']
-        angle_d = math.pi/2 - dpos * (2 * math.pi / num_players) + 0.35
-        ind_r_d = r * 1.6
-        ind_x_d = center_x + ind_r_d * math.cos(angle_d)
-        ind_y_d = center_y + ind_r_d * math.sin(angle_d)
+        # --- NEW SECTION: Draw Text Background Plane ---
+        # Draw a single semi-transparent box behind both name and stack
+        name_bbox = font_md.getbbox(player_name)
+        stack_bbox = font_sm.getbbox(stack_text)
+        box_w = max(name_bbox[2], stack_bbox[2]) + 20 # Width of the box
+        box_h = (name_bbox[3] - name_bbox[1]) + (stack_bbox[3] - stack_bbox[1]) + 25 # Height of the box
+        box_x = px - box_w / 2
+        box_y = py + 15
+        draw.rounded_rectangle([(box_x, box_y), (box_x + box_w, box_y + box_h)], radius=5, fill=(255, 255, 255, 100)) # Transparent white
+        # --- END NEW SECTION ---
         
-        dealer_radius = int(0.025 * min(width, height))
-        painter.setBrush(QColor(Qt.white))
-        painter.setPen(QPen(Qt.black, 1))
-        painter.drawEllipse(QPointF(ind_x_d, ind_y_d), dealer_radius, dealer_radius*5/8)
-        
-        painter.setFont(QFont("Arial", int(18 * min(scale_x, scale_y)), QFont.Bold))
-        painter.setPen(QColor(Qt.black))
-        painter.drawText(QRectF(ind_x_d - dealer_radius, ind_y_d - dealer_radius, 2*dealer_radius, 2*dealer_radius),
-                         Qt.AlignCenter, "D")
+        # Draw player name and stack (now on top of the background)
+        name_w = name_bbox[2] - name_bbox[0]
+        stack_w = stack_bbox[2] - stack_bbox[0]
+        draw.text((px - name_w / 2, box_y + 10), player_name, font=font_md, fill=color)
+        draw.text((px - stack_w / 2, box_y + 40), stack_text, font=font_sm, fill=color)
 
-        # 3) Helper to draw one card (nested function for convenience)
-        def _draw_card(px, py, card_id, face_up=True, is_folded=False):
-            RANKS = "23456789TJQKA"
-            SUITS = "♣♦♥♠"
-            SUIT_COLORS = [QColor("#2A7E3E"), QColor("#1C6BA9"), QColor("#D53535"), QColor(Qt.black)]
-
-            card_w = int(0.06 * width)
-            card_h = int(0.13 * height)
-            card_rect = QRectF(px - card_w/2, py - card_h/2, card_w, card_h)
-
-            if is_folded:
-                if self.show_all_holes:
-                    painter.setBrush(QColor("#E5E5E5"))
-                    painter.setPen(QPen(QColor(Qt.gray), 1))
-                    painter.drawRoundedRect(card_rect, 5, 5)
-                    
-                    label = f"{RANKS[card_id // 4]}{SUITS[card_id % 4]}"
-                    painter.setFont(QFont("Arial", int(24 * min(scale_x, scale_y)), QFont.Bold))
-                    painter.setPen(QColor(Qt.gray))
-                    painter.drawText(card_rect, Qt.AlignCenter, label)
-                return
-
-            if face_up:
-                suit_index = card_id % 4
-                color = SUIT_COLORS[suit_index]
-                label = f"{RANKS[card_id // 4]}{SUITS[card_id % 4]}"
+        # Draw hole cards
+        if 'hole_cards' in state and state['hole_cards'] and i < len(state['hole_cards']):
+            hole_cards = state['hole_cards'][i]
+            if hole_cards and len(hole_cards) >= 2:
+                # --- CHANGE: Decide if cards are face up ---
+                face_up = (i == 0) or show_all_cards
                 
-                painter.setBrush(QColor(Qt.white))
-                painter.setPen(QPen(Qt.black, 1.5))
-                painter.drawRoundedRect(card_rect, 5, 5)
-
-                painter.setFont(QFont("Arial", int(24 * min(scale_x, scale_y)), QFont.Bold))
-                painter.setPen(color)
-                painter.drawText(card_rect, Qt.AlignCenter, label)
-            else: # Face down
-                painter.setBrush(QColor(Qt.blue))
-                painter.setPen(QPen(Qt.black, 1.5))
-                painter.drawRoundedRect(card_rect, 5, 5)
-
-        # 4) Loop over each player and draw their info
-        to_move = self.state['to_move']
-        for i in range(num_players):
-            px, py = seat_positions[i].x(), seat_positions[i].y()
-            is_active = self.state['active'][i]
-
-            # Draw hole cards (moved further from player circle)
-            hole_cards = self.env.hole[i]
-            show_face = self.show_all_holes or (i == 0)
-            
-            card_y_offset = int(0.16 * height) # Distance from seat
-            if py < center_y:
-                card_y = py - card_y_offset
-            else:
-                card_y = py + card_y_offset
-
-            card_x_spacing = int(0.033 * width)
-            _draw_card(px - card_x_spacing, card_y, hole_cards[0], face_up=show_face, is_folded=(not is_active))
-            _draw_card(px + card_x_spacing, card_y, hole_cards[1], face_up=show_face, is_folded=(not is_active))
-
-            # Player Name
-            name_text = "You (P0)" if i == 0 else f"P{i}"
-            name_color = QColor(Qt.black) if is_active else QColor(Qt.gray)
-            
-            name_y_offset = int(0.33 * height) # Distance from seat
-            if py < center_y: # Player is in top half, text goes further up (above cards)
-                text_y = py - name_y_offset
-            else: # Player is in bottom half, text goes further down (below cards)
-                text_y = py + name_y_offset
-            
-            name_font = QFont("Arial", int(18 * min(scale_x, scale_y)), QFont.Bold) # Store font for measurement
-            painter.setFont(name_font)
-            name_font_metrics = QFontMetrics(name_font) # Get font metrics for name
-            name_bounding_rect = name_font_metrics.boundingRect(name_text)
-
-            # Calculate name_draw_rect based on measured bounding box
-            name_draw_x = px - name_bounding_rect.width() / 2
-            name_draw_rect = QRectF(name_draw_x, text_y, name_bounding_rect.width(), name_bounding_rect.height())
-
-            # --- NEW: Draw glassy white plane behind Player Name ---
-            painter.setBrush(QColor(255, 255, 255, 150)) # White with transparency
-            painter.setPen(Qt.NoPen)
-            name_bg_padding_x = 8 * scale_x
-            name_bg_padding_y = 4 * scale_y
-            name_background_rect = name_draw_rect.adjusted(-name_bg_padding_x, -name_bg_padding_y, name_bg_padding_x, name_bg_padding_y)
-            painter.drawRoundedRect(name_background_rect, 5, 5) # Rounded corners for background
-
-            painter.setPen(name_color)
-            painter.drawText(name_draw_rect, Qt.AlignLeft | Qt.AlignTop, name_text) # Draw name text
-
-            # Stack Size
-            stack_i = self.state['stacks'][i]
-            stack_text = str(stack_i)
-            stack_font = QFont("Arial", int(25 * min(scale_x, scale_y)), QFont.Bold) # Store font for measurement
-            painter.setFont(stack_font)
-            stack_font_metrics = QFontMetrics(stack_font) # Get font metrics for stack
-            stack_bounding_rect = stack_font_metrics.boundingRect(stack_text)
-            
-            # --- Position stack text symmetrically relative to name ---
-            stack_offset_from_name_y = int(0.017 * height) # Fixed vertical offset between name and stack
-            
-            # Calculate the Y position for the stack text
-            if py < center_y: # Player is in top half, stack is below name
-                stack_y = name_draw_rect.bottom() + stack_offset_from_name_y
-            else: # Player is in bottom half, stack is above name
-                stack_y = name_draw_rect.top() - stack_offset_from_name_y - stack_bounding_rect.height() # Subtract actual text height
-            
-            # Calculate stack_draw_rect based on measured bounding box
-            stack_draw_x = px - stack_bounding_rect.width() / 2
-            stack_draw_rect = QRectF(stack_draw_x, stack_y, stack_bounding_rect.width(), stack_bounding_rect.height())
-
-            # --- NEW: Draw glassy white plane behind Stack Size ---
-            painter.setBrush(QColor(255, 255, 255, 150)) # White with transparency
-            painter.setPen(Qt.NoPen)
-            stack_bg_padding_x = 8 * scale_x
-            stack_bg_padding_y = 4 * scale_y
-            stack_background_rect = stack_draw_rect.adjusted(-stack_bg_padding_x, -stack_bg_padding_y, stack_bg_padding_x, stack_bg_padding_y)
-            painter.drawRoundedRect(stack_background_rect, 5, 5) # Rounded corners for background
-
-            painter.setPen(QColor(Qt.black))
-            painter.drawText(stack_draw_rect, Qt.AlignLeft | Qt.AlignTop, stack_text) # Draw stack text
-
-            # Current Bet (chips in front of player)
-            bet_i = self.state['current_bets'][i]
-            if bet_i > 0:
-                chip_x = px
-                chip_y_offset = int(-0.05 * height)
-                if py > center_y:
-                    chip_y = py - chip_y_offset
-                else:
-                    chip_y = py + chip_y_offset
-
-                chip_radius = int(0.03 * min(width, height))
+                # --- CHANGE 1: Determine if the player has folded ---
+                is_folded = not state['active'][i]
                 
-                painter.setBrush(QColor("#B22222"))
-                painter.setPen(QPen(Qt.black, 1))
-                painter.drawEllipse(QPointF(chip_x, chip_y), chip_radius, chip_radius*5/8)
-                
-                painter.setFont(QFont("Arial", int(16 * min(scale_x, scale_y)), QFont.Bold))
-                painter.setPen(QColor(Qt.white))
-                bet_rect = QRectF(chip_x - chip_radius, chip_y - chip_radius, 2*chip_radius, 2*chip_radius)
-                painter.drawText(bet_rect, Qt.AlignCenter, str(bet_i))
-
-        # 5) Draw community cards (moved further from center)
-        cx, cy = center_x, center_y
-        community_card_y = cy + int(-0.05 * height) # Y position remains the same
-
-        # Calculate card width and effective spacing
-        card_w = int(0.06 * width)
-        effective_card_spacing = int(0.072 * width) # This is the center-to-center distance
-
-        num_community_cards = len(self.state['community'])
-
-        # Determine the starting X for the first card to achieve the desired centering
-        community_card_start_x = cx - (2 * effective_card_spacing)
-
-        for idx, card in enumerate(self.state['community']):
-            # Draw all cards relative to this calculated start_x
-            _draw_card(community_card_start_x + effective_card_spacing * idx, community_card_y, card, face_up=True)
-
-        # 6) Draw the pot total
-        display_pot_amount = self.state['starting_pot_this_round']
-        if self.state.get('terminal', False):
-            display_pot_amount = self.state['pot']
-
-        pot_radius = int(0.07 * min(width, height))
-        painter.setBrush(QColor(Qt.white))
-        painter.setPen(QPen(Qt.black, 1.2))
-        painter.drawEllipse(QPointF(center_x, center_y), pot_radius, pot_radius*5/8)
+                # --- CHANGE 2: Pass the folded status to the drawing function ---
+                _draw_card(draw, (px - CARD_W, py - 20), hole_cards[0], face_up=face_up, is_folded=is_folded)
+                _draw_card(draw, (px, py - 20), hole_cards[1], face_up=face_up, is_folded=is_folded)
         
-        painter.setFont(QFont("Arial", int(20 * min(scale_x, scale_y)), QFont.Bold))
-        painter.setPen(QColor(Qt.black))
-        pot_rect = QRectF(center_x - pot_radius, center_y - pot_radius, 2*pot_radius, 2*pot_radius)
-        painter.drawText(pot_rect, Qt.AlignCenter, str(display_pot_amount))
+        # --- NEW SECTION: Draw Player's Current Bet ---
+        current_bet = state['current_bets'][i]
+        if current_bet > 0:
+            # Position the bet between the player and the pot
+            bet_x = px + (cx - px) * 0.4
+            bet_y = py + (cy - py) * 0.4
+            
+            # Draw chip stack background
+            draw.ellipse([(bet_x - 15, bet_y - 10), (bet_x + 15, bet_y + 10)], fill="#EAEAAE")
+            # Draw bet amount text
+            bet_text = str(current_bet)
+            bet_bbox = font_sm.getbbox(bet_text)
+            bet_w, bet_h = bet_bbox[2] - bet_bbox[0], bet_bbox[3] - bet_bbox[1]
+            draw.text((bet_x - bet_w / 2, bet_y - bet_h / 2), bet_text, font=font_sm, fill="black")
+        # --- END NEW SECTION ---
 
-        painter.end()
+    return img
+
+def _draw_card(draw, pos, card_id, face_up=True, is_folded=False):
+    """Helper function to draw a single card onto the image."""
+    x, y = pos
+    CARD_W, CARD_H = 50, 70
+    card_rect = [(x, y), (x + CARD_W, y + CARD_H)]
+    
+    RANKS = "23456789TJQKA"
+    SUITS = "♣♦♥♠"
+    rank = RANKS[card_id // 4]
+    suit = SUITS[card_id % 4]
+    
+    # --- CHANGE 4: Add new drawing logic for folded cards ---
+    if is_folded:
+        # If folded, always draw face-up but greyed out
+        draw.rounded_rectangle(card_rect, radius=5, fill="#E5E5E5", outline="grey") # Light grey background
+        draw.text((x + 5, y + 5), rank + suit, font=font_lg, fill="grey") # Grey text
+        return # Stop here for folded cards
+    # --- END CHANGE ---
+    
+    if face_up:
+        color = "red" if suit in "♦♥" else "black"
+        draw.rounded_rectangle(card_rect, radius=5, fill="white", outline="black")
+        draw.text((x + 5, y + 5), rank + suit, font=font_lg, fill=color)
+    else:
+        # Draw card back
+        draw.rounded_rectangle(card_rect, radius=5, fill="blue", outline="black")
 

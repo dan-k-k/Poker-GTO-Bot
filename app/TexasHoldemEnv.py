@@ -1,10 +1,10 @@
-# app/TexasHoldemEnvNew.py
+# app/TexasHoldemEnv.py
 # Refactored poker environment using GameState and centralized HandEvaluator
 # Clean separation of game logic from AI feature extraction
 
 import random
 from typing import List, Optional
-from poker_core import GameState, Deck, HandEvaluator
+from app.poker_core import GameState, Deck, HandEvaluator
 
 
 class TexasHoldemEnv:
@@ -207,6 +207,7 @@ class TexasHoldemEnv:
         
         return {
             'hole': self.state.hole_cards[self.state.to_move][:],
+            'hole_cards': self.state.hole_cards,
             'community': self.state.community.copy(),
             'pot': self.state.pot,
             'to_move': self.state.to_move,
@@ -397,16 +398,13 @@ class TexasHoldemEnv:
         if self.state.stage == 3:  # River complete
             self.state.terminal = True
             self.state.win_reason = 'showdown'
-            winners = self._determine_showdown_winner()
-            self.state.winners = winners
-            share = self.state.pot // len(winners)
-            remainder = self.state.pot % len(winners)
-            for i, w in enumerate(winners):
-                self.state.stacks[w] += share
-                if i < remainder:
-                    self.state.stacks[w] += 1
-            self.state.pot = 0  # Reset pot after awarding chips
-            reward = +1 if 0 in winners else -1
+            
+            # --- NEW LOGIC: Use robust side pot distribution ---
+            self._distribute_pot_with_side_pots()
+            self.state.winners = self._determine_showdown_winner() # Still need to record winners for the UI
+            # --- END NEW LOGIC ---
+
+            reward = +1 if 0 in self.state.winners else -1
             self._check_tournament_winner()
             return self.get_state_dict(), reward, True
         
@@ -523,18 +521,13 @@ class TexasHoldemEnv:
         # Determine winners
         self.state.terminal = True
         self.state.win_reason = 'all_in_showdown'
-        winners = self._determine_showdown_winner()
-        self.state.winners = winners
+
+        # --- NEW LOGIC: Use robust side pot distribution ---
+        self._distribute_pot_with_side_pots()
+        self.state.winners = self._determine_showdown_winner()
+        # --- END NEW LOGIC ---
         
-        share = self.state.pot // len(winners)
-        remainder = self.state.pot % len(winners)
-        for i, w in enumerate(winners):
-            self.state.stacks[w] += share
-            if i < remainder:
-                self.state.stacks[w] += 1
-        self.state.pot = 0  # Reset pot after awarding chips
-        
-        reward = +1 if 0 in winners else -1
+        reward = +1 if 0 in self.state.winners else -1
         self._check_tournament_winner()
         return self.get_state_dict(), reward, True
     
@@ -579,6 +572,74 @@ class TexasHoldemEnv:
             self.state.terminal = True
             self.state.winners = []
             self.state.win_reason = 'no_survivors'
+    
+    def _distribute_pot_with_side_pots(self):
+        """
+        Handles complex pot distribution for showdowns with multiple all-in players.
+        This method correctly creates and awards the main pot and all side pots.
+        """
+        state = self.state
+        
+        # Get players involved in the showdown
+        showdown_players = [p for p in state.surviving_players if state.active[p]]
+        
+        if not showdown_players:
+            return # No one to award pot to
+
+        # Calculate each player's total investment for the hand
+        investments = {p: state.starting_stacks_this_hand[p] - state.stacks[p] for p in showdown_players}
+        
+        # If all investments are zero (everyone checked down), do nothing.
+        if all(v == 0 for v in investments.values()):
+            return
+
+        # Sort players by their investment amount
+        sorted_players = sorted(investments, key=investments.get)
+
+        # Create and distribute pots iteratively
+        last_investment_level = 0
+        while len(sorted_players) > 0:
+            # 1. Determine the next investment level
+            smallest_investment = investments[sorted_players[0]]
+            pot_level = smallest_investment - last_investment_level
+            
+            if pot_level <= 0:
+                # This player has been fully paid out, remove them for the next side pot
+                sorted_players.pop(0)
+                continue
+
+            # 2. Create the pot for this level
+            current_pot = pot_level * len(sorted_players)
+            
+            # 3. Determine eligible players for this pot
+            eligible_players = sorted_players[:] # All players at this level are eligible
+            
+            # 4. Find the winner(s) among eligible players
+            best_rank = None
+            winners = []
+            for p in eligible_players:
+                seven_cards = state.hole_cards[p] + state.community
+                rank = self.evaluator.best_hand_rank(seven_cards)
+                
+                if best_rank is None or rank > best_rank:
+                    best_rank = rank
+                    winners = [p]
+                elif rank == best_rank:
+                    winners.append(p)
+            
+            # 5. Distribute this pot to the winner(s)
+            share = current_pot // len(winners)
+            remainder = current_pot % len(winners)
+            for i, w in enumerate(winners):
+                state.stacks[w] += share
+                if i < remainder:
+                    state.stacks[w] += 1
+            
+            # 6. Prepare for the next side pot
+            last_investment_level = smallest_investment
+            sorted_players.pop(0) # Remove the player whose stack defined this pot
+
+        state.pot = 0 # All money has been distributed
     
     # Legacy compatibility methods
     @property

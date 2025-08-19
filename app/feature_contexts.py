@@ -3,7 +3,7 @@
 
 from dataclasses import dataclass
 from typing import List, Optional, Dict, Any
-from poker_core import GameState
+from app.poker_core import GameState
 
 
 @dataclass
