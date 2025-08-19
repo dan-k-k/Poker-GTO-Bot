@@ -6,6 +6,8 @@ An implementation of a Game Theory Optimal (GTO) poker AI using Neural Fictitiou
 
 This project is containerized with Docker, which is the recommended way to run the application. It guarantees a consistent, working environment without needing to install Python, dependencies, or configure anything on your local machine.
 
+**Note on the AI Agent:** The default setup runs a basic **`RandomBot`** opponent for immediate playability. The trained GTO models (`.pt` files) are **not included** in this repository to keep it lightweight. If you wish to play against your own trained agent, please see the instructions at the bottom.
+
 ### Prerequisites
 - You must have **Docker Desktop** installed and running on your computer.
 
@@ -13,7 +15,7 @@ This project is containerized with Docker, which is the recommended way to run t
 You have two options: pull the pre-built image from Docker Hub (easiest) or build it yourself from the source code.
 
 #### Option A: Pull from Docker Hub (Recommended)
-This downloads the ready-to-run application, just like downloading an app from an app store.
+This downloads the ready-to-run application.
 
 ```bash
 docker pull kingdaniel9/poker-bot:latest
