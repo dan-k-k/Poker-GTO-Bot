@@ -1,4 +1,4 @@
-# Advanced GTO Poker AI via Reinforcement Learning (Neural Fictitious Self-Play)
+# Advanced GTO Poker AI via Reinforcement Learning
 
 An implementation of a Game Theory Optimal (GTO) poker AI using Neural Fictitious Self-Play (NFSP). The agent learns a near-unexploitable strategy for two-player No-Limit Texas Hold'em. The user interface is built with Streamlit for easy interaction.
 
