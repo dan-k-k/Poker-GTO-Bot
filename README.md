@@ -1,8 +1,8 @@
-# Advanced GTO Poker AI 🤖
+# Advanced GTO Poker AI via Reinforcement Learning (Neural Fictitious Self-Play)
 
 An implementation of a Game Theory Optimal (GTO) poker AI using Neural Fictitious Self-Play (NFSP). The agent learns a near-unexploitable strategy for two-player No-Limit Texas Hold'em. The user interface is built with Streamlit for easy interaction.
 
-## 🚀 How to Play (The Easy Way with Docker)
+## How to Play (The Easy Way with Docker)
 
 This project is containerized with Docker, which is the recommended way to run the application. It guarantees a consistent, working environment without needing to install Python, dependencies, or configure anything on your local machine.
 
@@ -58,7 +58,7 @@ The poker game interface should appear, ready to play against the RandomBot.
 - **Opponent and Self Modeling**: Leverages statistical models of both players to inform strategy.
 
 <details>
-<summary>💻 Click here for Local Development and Training Instructions</summary>
+<summary> Click here for Local Development and Training Instructions</summary>
 
 #### Local Installation
 
@@ -80,7 +80,7 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-#### 🚀 Training Workflow
+#### Training Workflow
 
 Training follows a curriculum to ensure stable convergence.
 
