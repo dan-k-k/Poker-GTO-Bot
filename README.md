@@ -2,7 +2,7 @@
 
 An implementation of a Game Theory Optimal (GTO) poker AI using Neural Fictitious Self-Play (NFSP). The agent learns a near-unexploitable strategy for two-player No-Limit Texas Hold'em. The user interface is built with Streamlit for easy interaction.
 
-## How to Play (The Easy Way with Docker)
+## How to Play (with Docker)
 
 This project is containerized with Docker, which is the recommended way to run the application. It guarantees a consistent, working environment without needing to install Python, dependencies, or configure anything on your local machine.
 
