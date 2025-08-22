@@ -27,10 +27,12 @@ If you want to build the image from the code in this repository:
 
 ```bash
 # 1. Clone the repository
-git clone [https://github.com/dan-k-k/Poker-GTO-Bot.git](https://github.com/dan-k-k/Poker-GTO-Bot.git)
+git clone https://github.com/dan-k-k/Poker-GTO-Bot.git
 cd Poker-GTO-Bot
 
-# 2. Build the Docker image
+# 2. Instructions for training your own poker bot are below
+ 
+# 3. Build the Docker image
 docker build -t kingdaniel9/poker-bot:latest .
 ```
 
@@ -68,7 +70,7 @@ This is for developers who want to modify the code or run the training scripts d
 
 ```bash
 # 1. Clone the repository
-git clone [https://github.com/dan-k-k/Poker-GTO-Bot](https://github.com/dan-k-k/Poker-GTO-Bot)
+git clone https://github.com/dan-k-k/Poker-GTO-Bot.git
 cd Poker-GTO-Bot
 
 # 2. Create and activate a Python virtual environment
