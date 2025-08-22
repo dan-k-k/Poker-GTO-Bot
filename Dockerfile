@@ -22,3 +22,4 @@ COPY ./models /app/models
 # Expose the port and run the app
 EXPOSE 8501
 CMD ["streamlit", "run", "app/playgame.py"]
+

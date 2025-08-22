@@ -1,14 +1,31 @@
 # app/playgame.py
 import streamlit as st
 import time  # <-- Import the time library
+import os  # <-- Import the os library
 from app.TexasHoldemEnv import TexasHoldemEnv
 from app.visuals import create_table_image
-from app.poker_agents import RandomBot # Or your GTO agent
+from app.poker_agents import RandomBot, GTOAgent # <-- Import your GTOAgent
 
 # --- Initialize Game State ---
 if 'env' not in st.session_state:
     st.session_state.env = TexasHoldemEnv(num_players=2)
-    st.session_state.agents = [None, RandomBot(seat_id=1)] # Human is P0
+    
+    # --- NEW: Smart Agent Loading Logic ---
+    GTO_MODEL_PATH = "models/avg_pytorch_net.pt"
+
+    if os.path.exists(GTO_MODEL_PATH):
+        print(f"✅ Trained GTO model found at '{GTO_MODEL_PATH}'. Loading agent.")
+        # Make sure your GTOAgent can be initialized with the model path
+        opponent_agent = GTOAgent(seat_id=1, model_path=GTO_MODEL_PATH)
+        st.session_state.agent_name = "Trained Avg Strategy Agent"
+    else:
+        print(f"⚠️ No trained model found at '{GTO_MODEL_PATH}'. Defaulting to RandomBot.")
+        opponent_agent = RandomBot(seat_id=1)
+        st.session_state.agent_name = "Random Bot"
+        
+    st.session_state.agents = [None, opponent_agent] # Human is P0
+    # --- END NEW LOGIC ---
+    
     st.session_state.env.reset()
 
 env = st.session_state.env
@@ -17,7 +34,7 @@ state = env.get_state_dict()
 
 # --- Main App Layout ---
 st.set_page_config(layout="wide")
-st.title("Random Poker Bot")
+st.title(f"Poker vs {st.session_state.agent_name}")
 
 # --- CHANGE 1: Decide IF we should show all cards ---
 show_all_cards = state.get('terminal', False)

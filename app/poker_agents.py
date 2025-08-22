@@ -104,7 +104,7 @@ class GTOAgent(PokerAgent):
     def compute_action(self, state: Dict, env) -> Tuple[int, Optional[int]]:
         """Compute GTO action using the trained network."""
         # Extract features using new architecture
-        features = self.feature_extractor.extract_features(env.state, self.seat_id)
+        features, _ = self.feature_extractor.extract_features(env.state, self.seat_id, role='AS')
         
         # Get network prediction
         with torch.no_grad():
@@ -134,11 +134,11 @@ class GTOAgent(PokerAgent):
         # Handle bet sizing
         amount = None
         if action == 2 and 2 in legal_actions:
-            amount = self._determine_bet_size(state, bet_sizing[0])
+            amount = self._determine_bet_size(state, bet_sizing[0], env)
         
         return action, amount
     
-    def _determine_bet_size(self, state: Dict, sizing_output: float) -> int:
+    def _determine_bet_size(self, state: Dict, sizing_output: float, env) -> int:
         """Convert network output to actual bet size."""
         pot = state['pot']
         stack = state['stacks'][self.seat_id]
@@ -150,11 +150,16 @@ class GTOAgent(PokerAgent):
 
         target_bet = int(pot * pot_multiple)
         
-        # Ensure legal bet size
-        min_bet = 2  # Minimum bet (big blind)
+        # --- FIX: Use proper legal minimum raise from environment ---
+        min_raise = env._min_raise_amount(self.seat_id)
         max_bet = stack
         
-        final_bet = max(min_bet, min(target_bet, max_bet))
+        # If we can't make a legal raise, go all-in
+        if min_raise is None:
+            return max_bet
+        
+        # Clamp the target bet between legal min and max
+        final_bet = max(min_raise, min(target_bet, max_bet))
         return final_bet
     
     def new_hand(self):
