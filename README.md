@@ -30,7 +30,7 @@ If you want to build the image from the code in this repository:
 git clone https://github.com/dan-k-k/Poker-GTO-Bot.git
 cd Poker-GTO-Bot
 
-# 2. To play against your own trained bot, first follow the training instructions at the end of this guide.
+# 2. Instructions for training your own poker bot are at the end of the README.
 
 # 3. Build the Docker image
 docker build -t kingdaniel9/poker-bot:latest .
