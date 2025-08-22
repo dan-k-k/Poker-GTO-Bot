@@ -30,7 +30,7 @@ If you want to build the image from the code in this repository:
 git clone https://github.com/dan-k-k/Poker-GTO-Bot.git
 cd Poker-GTO-Bot
 
-# 2. Instructions for training your own poker bot are below
+# 2. Instructions for training your own poker bot are at the end of the README.
 
 # 3. Build the Docker image
 docker build -t kingdaniel9/poker-bot:latest .
@@ -62,7 +62,7 @@ The poker game interface should appear, ready to play against the RandomBot.
 - **Opponent and Self Modeling**: Leverages statistical models of both players to inform strategy.
 
 <details>
-<summary><b>**Click here for Local Development and Training Instructions**</b></summary>
+<summary><b>Click here for Local Development and Training Instructions</b></summary>
 
 #### Local Installation
 
