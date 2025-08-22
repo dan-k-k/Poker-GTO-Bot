@@ -17,7 +17,7 @@ COPY ./app /app/app
 RUN pip install -e .
 
 # Copy your models
-COPY ./models /app/models
+# COPY ./models /app/models
 
 # Expose the port and run the app
 EXPOSE 8501
