@@ -31,7 +31,7 @@ git clone https://github.com/dan-k-k/Poker-GTO-Bot.git
 cd Poker-GTO-Bot
 
 # 2. Instructions for training your own poker bot are below
- 
+
 # 3. Build the Docker image
 docker build -t kingdaniel9/poker-bot:latest .
 ```
@@ -91,10 +91,10 @@ Training follows a curriculum to ensure stable convergence.
 #### 1. Bootstrap Agent & Generate Initial Data
 
 Run the main training for ~100 episodes. This uses a heuristic to teach the agent basics and create the first dataset for the range predictor.
-Note: You can pause training at any time with Ctrl + C and resume with the same command.
 
 ```bash
 python -m app.trainingL1.train_L1
+# Note: You can pause training at any time with Ctrl + C and resume with the same command.
 ```
 #### 2. Train Initial Range Predictor
 
