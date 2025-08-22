@@ -88,7 +88,7 @@ pip install -e .
 
 Training follows a curriculum to ensure stable convergence.
 
-#### 1. Bootstrap Agent & Generate Initial Data
+#### 1. Bootstrap Agent & Generate Initial Data
 
 Run the main training for ~100 episodes. This uses a heuristic to teach the agent basics and create the first dataset for the range predictor.
 
@@ -96,14 +96,14 @@ Run the main training for ~100 episodes. This uses a heuristic to teach the agen
 python -m app.trainingL1.train_L1
 # Note: You can pause training at any time with Ctrl + C and resume with the same command.
 ```
-#### 2. Train Initial Range Predictor
+#### 2. Train Initial Range Predictor
 
 Use the data from Step 1 to train the first version of the RangeNetwork.
 
 ```bash
 python -m app.range_predictor.train_range_predictor
 ```
-#### 3. Iterative Refinement
+#### 3. Iterative Refinement
 
 Now, alternate between running the main agent training (which will automatically load and use the range model) and re-training the range predictor with the new, higher-quality data.
 
