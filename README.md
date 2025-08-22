@@ -62,7 +62,7 @@ The poker game interface should appear, ready to play against the RandomBot.
 - **Opponent and Self Modeling**: Leverages statistical models of both players to inform strategy.
 
 <details>
-<summary> Click here for Local Development and Training Instructions</summary>
+<summary><b>**Click here for Local Development and Training Instructions**</b></summary>
 
 #### Local Installation
 
